@@ -2,8 +2,13 @@ const JSON_HEADERS = {
   "Content-Type": "application/json"
 };
 
+function apiPath(path) {
+  if (!path.startsWith("/api/") || path.startsWith("/api/rpc")) return path;
+  return `/api/rpc?__path=${encodeURIComponent(path)}`;
+}
+
 async function request(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(apiPath(path), {
     ...options,
     headers: {
       ...JSON_HEADERS,

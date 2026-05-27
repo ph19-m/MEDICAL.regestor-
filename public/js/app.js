@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=3";
+import { api } from "./api.js?v=4";
 import {
   bookingCard,
   bookingTable,
@@ -13,7 +13,7 @@ import {
   queueStatusCard,
   statusBadge,
   whatsAppShareButton
-} from "./components.js?v=3";
+} from "./components.js?v=4";
 
 const app = document.querySelector("#app");
 
