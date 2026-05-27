@@ -704,11 +704,12 @@ function upsertNamedItem(collection, payload, prefix) {
 }
 
 async function handleApi(request, response, url) {
-  const db = readDb();
   const segments = url.pathname.split("/").filter(Boolean);
   const method = request.method;
 
   try {
+    const db = await readDb();
+
     if (method === "GET" && url.pathname === "/api/bootstrap") {
       return sendJson(response, 200, {
         ok: true,
@@ -765,7 +766,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = createBooking(db, payload);
       if (result.error) return sendError(response, 400, result.error, result);
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 201, {
         ok: true,
         data: publicBooking(db, result.booking)
@@ -775,7 +776,7 @@ async function handleApi(request, response, url) {
     if (method === "GET" && segments[1] === "bookings" && segments[2]) {
       const booking = db.bookings.find((item) => item.booking_code === segments[2] || item.id === segments[2]);
       if (!booking) return sendError(response, 404, "لم يتم العثور على الحجز.");
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 200, {
         ok: true,
         data: publicBooking(db, booking)
@@ -785,7 +786,7 @@ async function handleApi(request, response, url) {
     if (method === "PATCH" && segments[1] === "bookings" && segments[2] && segments[3] === "cancel") {
       const result = cancelBooking(db, segments[2]);
       if (result.error) return sendError(response, 400, result.error);
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 200, {
         ok: true,
         data: publicBooking(db, result.booking)
@@ -796,7 +797,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = patchBooking(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 200, {
         ok: true,
         data: publicBooking(db, result.booking)
@@ -809,7 +810,7 @@ async function handleApi(request, response, url) {
       if (code) {
         const booking = db.bookings.find((item) => item.booking_code === code);
         if (!booking) return sendError(response, 404, "لم يتم العثور على الحجز.");
-        writeDb(db);
+        await writeDb(db);
         return sendJson(response, 200, { ok: true, data: publicBooking(db, booking) });
       }
       if (phone) {
@@ -817,14 +818,14 @@ async function handleApi(request, response, url) {
           .filter((booking) => booking.patient_phone === phone)
           .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
           .map((booking) => publicBooking(db, booking));
-        writeDb(db);
+        await writeDb(db);
         return sendJson(response, 200, { ok: true, data: bookings });
       }
       return sendError(response, 400, "أدخل رقم الحجز أو رقم الهاتف.");
     }
 
     if (method === "GET" && url.pathname === "/api/dashboard/today") {
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 200, {
         ok: true,
         data: todayDashboard(db, url.searchParams)
@@ -835,7 +836,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = patchQueue(db, segments[2], segments[3], payload);
       if (result.error) return sendError(response, 400, result.error);
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 200, {
         ok: true,
         data: result.session
@@ -846,7 +847,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = updateSchedule(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 200, { ok: true, data: result.schedule });
     }
 
@@ -854,7 +855,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = createDoctor(db, payload);
       if (result.error) return sendError(response, 400, result.error);
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 201, { ok: true, data: publicDoctor(db, result.doctor) });
     }
 
@@ -862,7 +863,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = updateDoctor(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 200, { ok: true, data: publicDoctor(db, result.doctor) });
     }
 
@@ -873,7 +874,7 @@ async function handleApi(request, response, url) {
       ["name", "governorate", "area", "address", "phone", "status"].forEach((field) => {
         if (payload[field] !== undefined) clinic[field] = payload[field];
       });
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 200, { ok: true, data: clinic });
     }
 
@@ -885,13 +886,13 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = upsertNamedItem(db.specialties, payload, "spec");
       if (result.error) return sendError(response, 400, result.error);
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 201, { ok: true, data: result.item });
     }
 
     if (method === "DELETE" && segments[1] === "specialties" && segments[2]) {
       db.specialties = db.specialties.filter((item) => item.id !== segments[2]);
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 200, { ok: true });
     }
 
@@ -899,7 +900,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = upsertNamedItem(db.governorates, payload, "gov");
       if (result.error) return sendError(response, 400, result.error);
-      writeDb(db);
+      await writeDb(db);
       return sendJson(response, 201, { ok: true, data: result.item });
     }
 

@@ -4,6 +4,9 @@
   "private": true,
   "description": "Dawri Medical / دوري الطبي MVP for Iraqi private clinic appointment and queue management.",
   "main": "server/server.js",
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
   "scripts": {
     "start": "node server/server.js",
     "dev": "node server/server.js",
