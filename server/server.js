@@ -50,6 +50,8 @@ const SESSION_LABELS = {
   doctor_absent: "الطبيب غير موجود"
 };
 const APP_TIME_ZONE = "Asia/Baghdad";
+const DEMO_STAFF_ACCESS_CODE = "clinic-2026";
+const DEMO_SUPER_ADMIN_ACCESS_CODE = "owner-2026";
 
 function todayISO() {
   return toBaghdadDateString(new Date());
@@ -80,6 +82,79 @@ function sendError(response, statusCode, message, details = {}) {
     message,
     details
   });
+}
+
+function getHeader(request, name) {
+  const target = name.toLowerCase();
+  return Object.entries(request.headers || {}).find(([key]) => key.toLowerCase() === target)?.[1] || "";
+}
+
+function configuredStaffCode() {
+  return process.env.STAFF_ACCESS_CODE || DEMO_STAFF_ACCESS_CODE;
+}
+
+function configuredSuperAdminCode() {
+  return process.env.SUPER_ADMIN_ACCESS_CODE || DEMO_SUPER_ADMIN_ACCESS_CODE;
+}
+
+function getRequestAuth(request) {
+  const role = String(getHeader(request, "x-dawri-role") || "patient");
+  const accessCode = String(getHeader(request, "x-dawri-access-code") || "").trim();
+  const isSuperAdmin = Boolean(accessCode && accessCode === configuredSuperAdminCode());
+  const isStaff = isSuperAdmin || Boolean(accessCode && accessCode === configuredStaffCode());
+  return { role, accessCode, isStaff, isSuperAdmin };
+}
+
+function routeProtection(method, url, segments) {
+  if (method === "GET" && url.pathname === "/api/dashboard/today") return "staff";
+  if (method === "GET" && url.pathname === "/api/admin/stats") return "super_admin";
+  if (method === "PATCH" && segments[1] === "bookings" && segments[2] && segments[3] !== "cancel") return "staff";
+  if (method === "PATCH" && segments[1] === "queue") return "staff";
+  if (method === "PATCH" && segments[1] === "schedules") return "staff";
+  if (method === "POST" && url.pathname === "/api/doctors") return "staff";
+  if (method === "PATCH" && segments[1] === "doctors") return "staff";
+  if (method === "PATCH" && segments[1] === "clinics") return "super_admin";
+  if (method === "POST" && url.pathname === "/api/specialties") return "super_admin";
+  if (method === "DELETE" && segments[1] === "specialties") return "super_admin";
+  if (method === "POST" && url.pathname === "/api/governorates") return "super_admin";
+  return null;
+}
+
+function hasRequiredAccess(auth, requiredLevel) {
+  if (requiredLevel === "super_admin") return auth.isSuperAdmin;
+  if (requiredLevel === "staff") return auth.isStaff;
+  return true;
+}
+
+function publicBootstrap(db) {
+  return {
+    clinics: db.clinics.filter((clinic) => clinic.status === "active"),
+    doctors: db.doctors.map((doctor) => publicDoctor(db, doctor)).filter((doctor) => doctor.clinic?.status === "active"),
+    schedules: db.schedules,
+    bookings: [],
+    queueSessions: db.queueSessions,
+    notifications: [],
+    specialties: db.specialties,
+    governorates: db.governorates,
+    stats: stats(db),
+    today: todayISO()
+  };
+}
+
+function fullBootstrap(db) {
+  return {
+    users: db.users.map(sanitizeUser),
+    clinics: db.clinics,
+    doctors: db.doctors.map((doctor) => publicDoctor(db, doctor)),
+    schedules: db.schedules,
+    bookings: db.bookings.map((booking) => publicBooking(db, booking)),
+    queueSessions: db.queueSessions,
+    notifications: db.notifications,
+    specialties: db.specialties,
+    governorates: db.governorates,
+    stats: stats(db),
+    today: todayISO()
+  };
 }
 
 function parseBody(request) {
@@ -708,24 +783,32 @@ async function handleApi(request, response, url) {
   const method = request.method;
 
   try {
+    const auth = getRequestAuth(request);
+    if (method === "GET" && url.pathname === "/api/auth/check") {
+      const requiredLevel = auth.role === "super_admin" ? "super_admin" : "staff";
+      if (!hasRequiredAccess(auth, requiredLevel)) {
+        return sendError(response, 401, "كود الدخول غير صحيح.");
+      }
+      return sendJson(response, 200, {
+        ok: true,
+        data: {
+          role: auth.role,
+          access: requiredLevel
+        }
+      });
+    }
+
+    const requiredLevel = routeProtection(method, url, segments);
+    if (requiredLevel && !hasRequiredAccess(auth, requiredLevel)) {
+      return sendError(response, 401, "هذا المسار يحتاج صلاحية دخول.");
+    }
+
     const db = await readDb();
 
     if (method === "GET" && url.pathname === "/api/bootstrap") {
       return sendJson(response, 200, {
         ok: true,
-        data: {
-          users: db.users.map(sanitizeUser),
-          clinics: db.clinics,
-          doctors: db.doctors.map((doctor) => publicDoctor(db, doctor)),
-          schedules: db.schedules,
-          bookings: db.bookings.map((booking) => publicBooking(db, booking)),
-          queueSessions: db.queueSessions,
-          notifications: db.notifications,
-          specialties: db.specialties,
-          governorates: db.governorates,
-          stats: stats(db),
-          today: todayISO()
-        }
+        data: auth.isStaff ? fullBootstrap(db) : publicBootstrap(db)
       });
     }
 

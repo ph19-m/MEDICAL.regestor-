@@ -1282,6 +1282,33 @@ table small {
   background: var(--surface-strong);
 }
 
+.secure-login-card {
+  display: grid;
+  gap: 12px;
+}
+
+.secure-login-card label {
+  display: grid;
+  gap: 6px;
+}
+
+.secure-login-card input,
+.secure-login-card select {
+  width: 100%;
+}
+
+.auth-session-panel {
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-session-panel p {
+  margin: 0;
+}
+
 .inline-create {
   display: flex;
   gap: 10px;

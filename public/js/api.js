@@ -7,11 +7,21 @@ function apiPath(path) {
   return `/api/rpc?__path=${encodeURIComponent(path)}`;
 }
 
+function authHeaders() {
+  const role = localStorage.getItem("dawri-role") || "patient";
+  const accessCode = localStorage.getItem("dawri-access-code") || "";
+  return {
+    "X-Dawri-Role": role,
+    ...(accessCode ? { "X-Dawri-Access-Code": accessCode } : {})
+  };
+}
+
 async function request(path, options = {}) {
   const response = await fetch(apiPath(path), {
     ...options,
     headers: {
       ...JSON_HEADERS,
+      ...authHeaders(),
       ...(options.headers || {})
     }
   });
@@ -26,6 +36,13 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  authCheck: (role, accessCode) =>
+    request("/api/auth/check", {
+      headers: {
+        "X-Dawri-Role": role,
+        ...(accessCode ? { "X-Dawri-Access-Code": accessCode } : {})
+      }
+    }),
   bootstrap: () => request("/api/bootstrap"),
   doctors: (params = {}) => {
     const searchParams = new URLSearchParams();

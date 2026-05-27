@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=4";
+import { api } from "./api.js?v=5";
 import {
   bookingCard,
   bookingTable,
@@ -13,7 +13,7 @@ import {
   queueStatusCard,
   statusBadge,
   whatsAppShareButton
-} from "./components.js?v=4";
+} from "./components.js?v=5";
 
 const app = document.querySelector("#app");
 
@@ -674,6 +674,112 @@ function clinicRegisterPage() {
 }
 
 function loginPage() {
+  const hasAccessCode = Boolean(localStorage.getItem("dawri-access-code"));
+  render(
+    `
+      <section class="section page-title">
+        <span class="eyebrow">تسجيل الدخول</span>
+        <h1>دخول آمن للعيادة وإدارة المنصة</h1>
+        <p>المرضى يقدرون يحجزون ويتابعون بدون حساب. لوحة العيادة ولوحة المالك تحتاج كود دخول حتى نحمي بيانات الحجز والطابور.</p>
+      </section>
+      <section class="section">
+        <div class="role-grid">
+          <article class="role-card ${state.role === "patient" ? "active" : ""}">
+            <strong>دخول كمريض</strong>
+            <span>حجز موعد ومتابعة رقم الدور بدون كود.</span>
+            <button class="btn primary" type="button" data-patient-login>متابعة كمريض</button>
+          </article>
+
+          <form class="role-card secure-login-card" id="staff-login-form">
+            <strong>دخول العيادة</strong>
+            <span>خاص بالسكرتير أو مدير العيادة لإدارة حجوزات اليوم والطابور.</span>
+            <label>
+              <span>الدور</span>
+              <select name="role">
+                <option value="secretary" ${state.role === "secretary" ? "selected" : ""}>سكرتير العيادة</option>
+                <option value="clinic_admin" ${state.role === "clinic_admin" ? "selected" : ""}>مدير العيادة</option>
+              </select>
+            </label>
+            <label>
+              <span>كود دخول العيادة</span>
+              <input name="accessCode" type="password" autocomplete="current-password" placeholder="أدخل الكود" required />
+            </label>
+            <button class="btn primary" type="submit">دخول لوحة العيادة</button>
+          </form>
+
+          <form class="role-card secure-login-card" id="owner-login-form">
+            <strong>دخول مالك المنصة</strong>
+            <span>إدارة العيادات والاختصاصات وإحصائيات المنصة.</span>
+            <input name="accessCode" type="password" autocomplete="current-password" placeholder="كود مالك المنصة" required />
+            <button class="btn secondary" type="submit">دخول لوحة المالك</button>
+          </form>
+        </div>
+        ${
+          hasAccessCode
+            ? `<div class="panel auth-session-panel">
+                <p>أنت مسجل حالياً كـ <strong>${roleLabels[state.role] || "مستخدم"}</strong>.</p>
+                <button class="btn ghost" type="button" data-logout>تسجيل خروج</button>
+              </div>`
+            : ""
+        }
+      </section>
+    `,
+    "تسجيل الدخول"
+  );
+
+  document.querySelector("[data-patient-login]")?.addEventListener("click", async () => {
+    state.role = "patient";
+    localStorage.setItem("dawri-role", state.role);
+    localStorage.removeItem("dawri-access-code");
+    await refreshData();
+    toast("تم الدخول كمريض", "success");
+    navigate("/");
+  });
+
+  document.querySelector("#staff-login-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const role = form.role.value;
+    const accessCode = form.accessCode.value.trim();
+    try {
+      await api.authCheck(role, accessCode);
+      state.role = role;
+      localStorage.setItem("dawri-role", role);
+      localStorage.setItem("dawri-access-code", accessCode);
+      await refreshData();
+      toast(`تم الدخول كـ ${roleLabels[role]}`, "success");
+      navigate("/dashboard");
+    } catch (error) {
+      toast(error.message || "كود الدخول غير صحيح.", "error");
+    }
+  });
+
+  document.querySelector("#owner-login-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const accessCode = event.currentTarget.accessCode.value.trim();
+    try {
+      await api.authCheck("super_admin", accessCode);
+      state.role = "super_admin";
+      localStorage.setItem("dawri-role", "super_admin");
+      localStorage.setItem("dawri-access-code", accessCode);
+      await refreshData();
+      toast("تم الدخول كمالك المنصة", "success");
+      navigate("/admin");
+    } catch (error) {
+      toast(error.message || "كود مالك المنصة غير صحيح.", "error");
+    }
+  });
+
+  document.querySelector("[data-logout]")?.addEventListener("click", async () => {
+    state.role = "patient";
+    localStorage.setItem("dawri-role", "patient");
+    localStorage.removeItem("dawri-access-code");
+    await refreshData();
+    toast("تم تسجيل الخروج", "success");
+    navigate("/");
+  });
+  return;
+
   const roles = [
     ["patient", "Login as Patient", "متابعة وحجز كأنك مريض"],
     ["secretary", "Login as Secretary", "إدارة حجوزات اليوم والدور"],
@@ -1320,6 +1426,29 @@ async function notFoundPage() {
   );
 }
 
+function hasAccessCode() {
+  return Boolean(localStorage.getItem("dawri-access-code"));
+}
+
+function accessDeniedPage(kind = "staff") {
+  const title = kind === "admin" ? "لوحة المالك محمية" : "لوحة العيادة محمية";
+  const copy =
+    kind === "admin"
+      ? "تحتاج كود مالك المنصة حتى تدخل إلى الإدارة العامة."
+      : "تحتاج كود العيادة حتى تدخل إلى حجوزات اليوم والتحكم بالدور.";
+  render(
+    `
+      <section class="section page-title">
+        <span class="eyebrow">دخول مطلوب</span>
+        <h1>${title}</h1>
+        <p>${copy}</p>
+        <a class="btn primary" href="/login" data-link>تسجيل الدخول</a>
+      </section>
+    `,
+    title
+  );
+}
+
 async function route() {
   clearTimer();
   if (!state.data) await refreshData();
@@ -1339,17 +1468,45 @@ async function route() {
     if (path === "/login") return loginPage();
     if (path === "/register") return registerPage();
     if (path === "/dashboard" || path === "/dashboard/today" || path === "/dashboard/bookings" || path === "/dashboard/queue") {
+      if (!["secretary", "clinic_admin", "super_admin"].includes(state.role) || !hasAccessCode()) return accessDeniedPage("staff");
       return dashboardTodayPage(path);
     }
-    if (path === "/dashboard/schedule") return dashboardSchedulePage();
-    if (path === "/dashboard/doctors") return dashboardDoctorsPage();
-    if (path === "/dashboard/settings") return dashboardSettingsPage();
-    if (path === "/admin") return adminDashboardPage();
-    if (path === "/admin/clinics") return adminClinicsPage();
-    if (path === "/admin/doctors") return adminDoctorsPage();
-    if (path === "/admin/specialties") return adminSpecialtiesPage();
-    if (path === "/admin/areas") return adminAreasPage();
-    if (path === "/admin/bookings") return adminBookingsPage();
+    if (path === "/dashboard/schedule") {
+      if (!["secretary", "clinic_admin", "super_admin"].includes(state.role) || !hasAccessCode()) return accessDeniedPage("staff");
+      return dashboardSchedulePage();
+    }
+    if (path === "/dashboard/doctors") {
+      if (!["clinic_admin", "super_admin"].includes(state.role) || !hasAccessCode()) return accessDeniedPage("staff");
+      return dashboardDoctorsPage();
+    }
+    if (path === "/dashboard/settings") {
+      if (!["clinic_admin", "super_admin"].includes(state.role) || !hasAccessCode()) return accessDeniedPage("staff");
+      return dashboardSettingsPage();
+    }
+    if (path === "/admin") {
+      if (state.role !== "super_admin" || !hasAccessCode()) return accessDeniedPage("admin");
+      return adminDashboardPage();
+    }
+    if (path === "/admin/clinics") {
+      if (state.role !== "super_admin" || !hasAccessCode()) return accessDeniedPage("admin");
+      return adminClinicsPage();
+    }
+    if (path === "/admin/doctors") {
+      if (state.role !== "super_admin" || !hasAccessCode()) return accessDeniedPage("admin");
+      return adminDoctorsPage();
+    }
+    if (path === "/admin/specialties") {
+      if (state.role !== "super_admin" || !hasAccessCode()) return accessDeniedPage("admin");
+      return adminSpecialtiesPage();
+    }
+    if (path === "/admin/areas") {
+      if (state.role !== "super_admin" || !hasAccessCode()) return accessDeniedPage("admin");
+      return adminAreasPage();
+    }
+    if (path === "/admin/bookings") {
+      if (state.role !== "super_admin" || !hasAccessCode()) return accessDeniedPage("admin");
+      return adminBookingsPage();
+    }
     return notFoundPage();
   } catch (error) {
     console.error(error);

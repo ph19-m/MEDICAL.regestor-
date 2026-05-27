@@ -98,6 +98,22 @@ To reset and reseed the connected database:
 node server/reset-db.js
 ```
 
+## Staff Access Codes
+
+Patient booking and tracking stay public. Clinic and owner operations are protected with access-code headers.
+
+Set these in Vercel Environment Variables:
+
+- `STAFF_ACCESS_CODE`: code for secretary / clinic admin dashboard.
+- `SUPER_ADMIN_ACCESS_CODE`: code for platform owner dashboard.
+
+Fallback demo codes are available if env vars are not set:
+
+- Clinic staff: `clinic-2026`
+- Platform owner: `owner-2026`
+
+Change both before using the demo with real clinics.
+
 ## Vercel Deployment
 
 This MVP is now prepared for Vercel:
