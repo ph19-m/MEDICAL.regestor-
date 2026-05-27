@@ -160,15 +160,24 @@ async function readPostgresDb() {
     constants: {}
   };
 
-  const meta = await pg.query("SELECT key, value FROM app_meta");
+  const metaPromise = pg.query("SELECT key, value FROM app_meta");
+  const collectionPromises = Object.entries(COLLECTION_TABLES).map(async ([collection, table]) => {
+    const rows = await pg.query(`SELECT data FROM ${table} ORDER BY id ASC`);
+    return [collection, rows.rows.map((row) => row.data)];
+  });
+
+  const [meta, collections] = await Promise.all([
+    metaPromise,
+    Promise.all(collectionPromises)
+  ]);
+
   meta.rows.forEach((row) => {
     data[row.key] = row.value;
   });
 
-  for (const [collection, table] of Object.entries(COLLECTION_TABLES)) {
-    const rows = await pg.query(`SELECT data FROM ${table} ORDER BY id ASC`);
-    data[collection] = rows.rows.map((row) => row.data);
-  }
+  collections.forEach(([collection, rows]) => {
+    data[collection] = rows;
+  });
 
   return data;
 }

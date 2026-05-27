@@ -52,6 +52,9 @@ const SESSION_LABELS = {
 const APP_TIME_ZONE = "Asia/Baghdad";
 const DEMO_STAFF_ACCESS_CODE = "clinic-2026";
 const DEMO_SUPER_ADMIN_ACCESS_CODE = "owner-2026";
+const PUBLIC_BOOTSTRAP_CACHE_MS = Number(process.env.PUBLIC_BOOTSTRAP_CACHE_MS || 20000);
+
+let publicBootstrapCache = null;
 
 function todayISO() {
   return toBaghdadDateString(new Date());
@@ -82,6 +85,25 @@ function sendError(response, statusCode, message, details = {}) {
     message,
     details
   });
+}
+
+function getPublicBootstrapCache(method, url, auth) {
+  if (method !== "GET" || url.pathname !== "/api/bootstrap" || auth.accessCode) return null;
+  if (!publicBootstrapCache || publicBootstrapCache.expiresAt <= Date.now()) return null;
+  return publicBootstrapCache.data;
+}
+
+function setPublicBootstrapCache(data) {
+  if (PUBLIC_BOOTSTRAP_CACHE_MS <= 0) return;
+  publicBootstrapCache = {
+    data,
+    expiresAt: Date.now() + PUBLIC_BOOTSTRAP_CACHE_MS
+  };
+}
+
+async function persistDb(db) {
+  publicBootstrapCache = null;
+  return writeDb(db);
 }
 
 function getHeader(request, name) {
@@ -960,9 +982,18 @@ async function handleApi(request, response, url) {
   const method = request.method;
 
   try {
+    const requestAuth = getRequestAuth(request);
+    const cachedPublicBootstrap = getPublicBootstrapCache(method, url, requestAuth);
+    if (cachedPublicBootstrap) {
+      return sendJson(response, 200, {
+        ok: true,
+        data: cachedPublicBootstrap
+      });
+    }
+
     const db = await readDb();
     const normalizedTenants = ensureTenantFields(db);
-    if (normalizedTenants) await writeDb(db);
+    if (normalizedTenants) await persistDb(db);
     const auth = resolveRequestAuth(db, request);
 
     if (method === "GET" && url.pathname === "/api/auth/check") {
@@ -985,9 +1016,11 @@ async function handleApi(request, response, url) {
     }
 
     if (method === "GET" && url.pathname === "/api/bootstrap") {
+      const data = auth.isStaff ? fullBootstrap(db, auth) : publicBootstrap(db);
+      if (!auth.isStaff && !auth.accessCode) setPublicBootstrapCache(data);
       return sendJson(response, 200, {
         ok: true,
-        data: auth.isStaff ? fullBootstrap(db, auth) : publicBootstrap(db)
+        data
       });
     }
 
@@ -1043,7 +1076,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = createClinicRegistration(db, payload);
       if (result.error) return sendError(response, 400, result.error);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 201, {
         ok: true,
         data: publicClinic(result.clinic)
@@ -1054,7 +1087,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = createBooking(db, payload);
       if (result.error) return sendError(response, 400, result.error, result);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 201, {
         ok: true,
         data: publicBooking(db, result.booking)
@@ -1064,7 +1097,7 @@ async function handleApi(request, response, url) {
     if (method === "GET" && segments[1] === "bookings" && segments[2]) {
       const booking = db.bookings.find((item) => item.booking_code === segments[2] || item.id === segments[2]);
       if (!booking) return sendError(response, 404, "لم يتم العثور على الحجز.");
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 200, {
         ok: true,
         data: publicBooking(db, booking)
@@ -1074,7 +1107,7 @@ async function handleApi(request, response, url) {
     if (method === "PATCH" && segments[1] === "bookings" && segments[2] && segments[3] === "cancel") {
       const result = cancelBooking(db, segments[2]);
       if (result.error) return sendError(response, 400, result.error);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 200, {
         ok: true,
         data: publicBooking(db, result.booking)
@@ -1087,7 +1120,7 @@ async function handleApi(request, response, url) {
       if (existingBooking && !canAccessClinic(auth, existingBooking.clinic_id)) return sendError(response, 403, "لا تملك صلاحية تعديل هذا الحجز.");
       const result = patchBooking(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 200, {
         ok: true,
         data: publicBooking(db, result.booking)
@@ -1100,7 +1133,7 @@ async function handleApi(request, response, url) {
       if (code) {
         const booking = db.bookings.find((item) => item.booking_code === code);
         if (!booking) return sendError(response, 404, "لم يتم العثور على الحجز.");
-        await writeDb(db);
+        await persistDb(db);
         return sendJson(response, 200, { ok: true, data: publicBooking(db, booking) });
       }
       if (phone) {
@@ -1108,14 +1141,14 @@ async function handleApi(request, response, url) {
           .filter((booking) => booking.patient_phone === phone)
           .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
           .map((booking) => publicBooking(db, booking));
-        await writeDb(db);
+        await persistDb(db);
         return sendJson(response, 200, { ok: true, data: bookings });
       }
       return sendError(response, 400, "أدخل رقم الحجز أو رقم الهاتف.");
     }
 
     if (method === "GET" && url.pathname === "/api/dashboard/today") {
-      await writeDb(db);
+      await persistDb(db);
       if (auth.clinicId) {
         const requestedDoctorId = url.searchParams.get("doctorId");
         if (requestedDoctorId && !canAccessDoctor(db, auth, requestedDoctorId)) {
@@ -1137,7 +1170,7 @@ async function handleApi(request, response, url) {
       if (!canAccessDoctor(db, auth, segments[2])) return sendError(response, 403, "لا تملك صلاحية تعديل هذا الدور.");
       const result = patchQueue(db, segments[2], segments[3], payload);
       if (result.error) return sendError(response, 400, result.error);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 200, {
         ok: true,
         data: result.session
@@ -1150,7 +1183,7 @@ async function handleApi(request, response, url) {
       if (schedule && !canAccessDoctor(db, auth, schedule.doctor_id)) return sendError(response, 403, "لا تملك صلاحية تعديل هذا الجدول.");
       const result = updateSchedule(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 200, { ok: true, data: result.schedule });
     }
 
@@ -1159,7 +1192,7 @@ async function handleApi(request, response, url) {
       if (auth.clinicId) payload.clinic_id = auth.clinicId;
       const result = createDoctor(db, payload);
       if (result.error) return sendError(response, 400, result.error);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 201, { ok: true, data: publicDoctor(db, result.doctor) });
     }
 
@@ -1169,7 +1202,7 @@ async function handleApi(request, response, url) {
       if (auth.clinicId) delete payload.clinic_id;
       const result = updateDoctor(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 200, { ok: true, data: publicDoctor(db, result.doctor) });
     }
 
@@ -1187,7 +1220,7 @@ async function handleApi(request, response, url) {
       if (payload.status === "inactive") {
         clinic.registration_status = clinic.registration_status === "pending" ? "rejected" : "inactive";
       }
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 200, { ok: true, data: clinic });
     }
 
@@ -1199,13 +1232,13 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = upsertNamedItem(db.specialties, payload, "spec");
       if (result.error) return sendError(response, 400, result.error);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 201, { ok: true, data: result.item });
     }
 
     if (method === "DELETE" && segments[1] === "specialties" && segments[2]) {
       db.specialties = db.specialties.filter((item) => item.id !== segments[2]);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 200, { ok: true });
     }
 
@@ -1213,7 +1246,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = upsertNamedItem(db.governorates, payload, "gov");
       if (result.error) return sendError(response, 400, result.error);
-      await writeDb(db);
+      await persistDb(db);
       return sendJson(response, 201, { ok: true, data: result.item });
     }
 
