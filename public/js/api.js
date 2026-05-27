@@ -52,7 +52,13 @@ export const api = {
     return request(`/api/doctors?${searchParams.toString()}`);
   },
   doctor: (id) => request(`/api/doctors/${encodeURIComponent(id)}`),
+  clinicPublic: (slug) => request(`/api/clinics/${encodeURIComponent(slug)}/public`),
   availability: (doctorId) => request(`/api/availability/${encodeURIComponent(doctorId)}`),
+  createClinicRegistration: (payload) =>
+    request("/api/clinic-registrations", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   createBooking: (payload) =>
     request("/api/bookings", {
       method: "POST",

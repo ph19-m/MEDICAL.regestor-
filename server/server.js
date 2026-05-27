@@ -101,8 +101,20 @@ function getRequestAuth(request) {
   const role = String(getHeader(request, "x-dawri-role") || "patient");
   const accessCode = String(getHeader(request, "x-dawri-access-code") || "").trim();
   const isSuperAdmin = Boolean(accessCode && accessCode === configuredSuperAdminCode());
-  const isStaff = isSuperAdmin || Boolean(accessCode && accessCode === configuredStaffCode());
-  return { role, accessCode, isStaff, isSuperAdmin };
+  const isGlobalStaff = Boolean(accessCode && accessCode === configuredStaffCode());
+  return { role, accessCode, isGlobalStaff, isStaff: isSuperAdmin || isGlobalStaff, isSuperAdmin, clinicId: "" };
+}
+
+function resolveRequestAuth(db, request) {
+  const auth = getRequestAuth(request);
+  if (!auth.isStaff && auth.accessCode) {
+    const clinic = db.clinics.find((item) => item.access_code && item.access_code === auth.accessCode);
+    if (clinic && clinic.status === "active") {
+      auth.isStaff = true;
+      auth.clinicId = clinic.id;
+    }
+  }
+  return auth;
 }
 
 function routeProtection(method, url, segments) {
@@ -126,9 +138,18 @@ function hasRequiredAccess(auth, requiredLevel) {
   return true;
 }
 
+function canAccessClinic(auth, clinicId) {
+  return auth.isSuperAdmin || !auth.clinicId || auth.clinicId === clinicId;
+}
+
+function canAccessDoctor(db, auth, doctorId) {
+  const doctor = findDoctor(db, doctorId);
+  return Boolean(doctor && canAccessClinic(auth, doctor.clinic_id));
+}
+
 function publicBootstrap(db) {
   return {
-    clinics: db.clinics.filter((clinic) => clinic.status === "active"),
+    clinics: db.clinics.filter((clinic) => clinic.status === "active").map(publicClinic),
     doctors: db.doctors.map((doctor) => publicDoctor(db, doctor)).filter((doctor) => doctor.clinic?.status === "active"),
     schedules: db.schedules,
     bookings: [],
@@ -141,18 +162,50 @@ function publicBootstrap(db) {
   };
 }
 
-function fullBootstrap(db) {
+function scopedDbForAuth(db, auth) {
+  if (!auth?.clinicId || auth.isSuperAdmin) return db;
+  const doctorIds = db.doctors
+    .filter((doctor) => doctor.clinic_id === auth.clinicId)
+    .map((doctor) => doctor.id);
+  const doctorIdSet = new Set(doctorIds);
+  const bookingIds = new Set(
+    db.bookings
+      .filter((booking) => booking.clinic_id === auth.clinicId || doctorIdSet.has(booking.doctor_id))
+      .map((booking) => booking.id)
+  );
   return {
-    users: db.users.map(sanitizeUser),
-    clinics: db.clinics,
-    doctors: db.doctors.map((doctor) => publicDoctor(db, doctor)),
-    schedules: db.schedules,
-    bookings: db.bookings.map((booking) => publicBooking(db, booking)),
-    queueSessions: db.queueSessions,
-    notifications: db.notifications,
+    ...db,
+    clinics: db.clinics.filter((clinic) => clinic.id === auth.clinicId),
+    doctors: db.doctors.filter((doctor) => doctorIdSet.has(doctor.id)),
+    schedules: db.schedules.filter((schedule) => doctorIdSet.has(schedule.doctor_id)),
+    bookings: db.bookings.filter((booking) => bookingIds.has(booking.id)),
+    queueSessions: db.queueSessions.filter((session) => session.clinic_id === auth.clinicId || doctorIdSet.has(session.doctor_id)),
+    notifications: db.notifications.filter((notification) => bookingIds.has(notification.booking_id))
+  };
+}
+
+function fullBootstrap(db, auth = {}) {
+  const scoped = scopedDbForAuth(db, auth);
+  return {
+    users: auth.isSuperAdmin ? db.users.map(sanitizeUser) : [],
+    clinics: scoped.clinics.map((clinic) => ({
+      ...publicClinic(clinic),
+      access_code: auth.isSuperAdmin ? clinic.access_code : undefined,
+      owner_name: clinic.owner_name,
+      owner_phone: clinic.owner_phone,
+      clinic_type: clinic.clinic_type,
+      plan: clinic.plan,
+      subscription_status: clinic.subscription_status,
+      trial_ends_at: clinic.trial_ends_at
+    })),
+    doctors: scoped.doctors.map((doctor) => publicDoctor(scoped, doctor)),
+    schedules: scoped.schedules,
+    bookings: scoped.bookings.map((booking) => publicBooking(scoped, booking)),
+    queueSessions: scoped.queueSessions,
+    notifications: scoped.notifications,
     specialties: db.specialties,
     governorates: db.governorates,
-    stats: stats(db),
+    stats: stats(scoped),
     today: todayISO()
   };
 }
@@ -224,6 +277,29 @@ function makeId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function slugify(value, fallback = "clinic") {
+  const ascii = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return ascii || `${fallback}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function uniqueSlug(collection, base) {
+  let slug = base;
+  let index = 2;
+  while (collection.some((item) => item.slug === slug || item.id === slug)) {
+    slug = `${base}-${index}`;
+    index += 1;
+  }
+  return slug;
+}
+
+function makeAccessCode(prefix = "clinic") {
+  return `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
 function makeBookingCode(db) {
   let code = "";
   do {
@@ -239,6 +315,10 @@ function sanitizeUser(user) {
 
 function findClinic(db, clinicId) {
   return db.clinics.find((clinic) => clinic.id === clinicId);
+}
+
+function findClinicBySlug(db, slug) {
+  return db.clinics.find((clinic) => clinic.slug === slug || clinic.id === slug);
 }
 
 function findDoctor(db, doctorId) {
@@ -341,8 +421,24 @@ function isClinicOpen(status) {
   return status === "open" || status === "active";
 }
 
+function publicClinic(clinic) {
+  if (!clinic) return null;
+  const slug = clinic.slug || clinic.id;
+  const {
+    access_code: _accessCode,
+    internal_notes: _internalNotes,
+    ...safeClinic
+  } = clinic;
+  return {
+    ...safeClinic,
+    slug,
+    public_path: `/clinics/${encodeURIComponent(slug)}`,
+    public_url: `/clinics/${encodeURIComponent(slug)}`
+  };
+}
+
 function publicDoctor(db, doctor) {
-  const clinic = findClinic(db, doctor.clinic_id);
+  const clinic = publicClinic(findClinic(db, doctor.clinic_id));
   const schedules = db.schedules.filter((schedule) => schedule.doctor_id === doctor.id);
   const activeSchedules = schedules.filter((schedule) => schedule.is_active);
   const session = db.queueSessions.find(
@@ -536,9 +632,12 @@ function createBooking(db, payload) {
   return { booking };
 }
 
-function todayDashboard(db, searchParams) {
+function todayDashboard(db, searchParams, auth = {}) {
   const date = searchParams.get("date") || todayISO();
-  const doctorId = searchParams.get("doctorId") || db.doctors[0]?.id;
+  const availableDoctors = auth.clinicId
+    ? db.doctors.filter((doctor) => doctor.clinic_id === auth.clinicId)
+    : db.doctors;
+  const doctorId = searchParams.get("doctorId") || availableDoctors[0]?.id;
   const doctor = findDoctor(db, doctorId);
   const bookings = db.bookings
     .filter((booking) => booking.doctor_id === doctorId && booking.booking_date === date)
@@ -762,6 +861,84 @@ function updateDoctor(db, doctorId, payload) {
   return { doctor };
 }
 
+function createClinicRegistration(db, payload) {
+  const name = String(payload.clinic_name || payload.name || "").trim();
+  const phone = String(payload.phone || "").trim();
+  const governorate = String(payload.governorate || "").trim();
+  const area = String(payload.area || "").trim();
+  const address = String(payload.address || "").trim();
+  const ownerName = String(payload.owner_name || payload.ownerName || "").trim();
+  const ownerPhone = String(payload.owner_phone || payload.ownerPhone || phone).trim();
+  const clinicType = String(payload.clinic_type || payload.clinicType || "عيادة خاصة").trim();
+  const now = new Date();
+
+  if (!name) return { error: "اسم العيادة مطلوب." };
+  if (!validatePhone(phone)) return { error: "رقم هاتف العيادة يجب أن يبدأ بـ 07 ويتكون من 11 رقم." };
+  if (!governorate) return { error: "يرجى اختيار المحافظة." };
+  if (!area) return { error: "المنطقة مطلوبة." };
+  if (!address) return { error: "عنوان العيادة مطلوب." };
+  if (ownerPhone && !validatePhone(ownerPhone)) return { error: "رقم مسؤول العيادة يجب أن يبدأ بـ 07 ويتكون من 11 رقم." };
+
+  const duplicate = db.clinics.find((clinic) => clinic.phone === phone || (ownerPhone && clinic.owner_phone === ownerPhone));
+  if (duplicate && duplicate.status !== "inactive") {
+    return { error: "يوجد طلب أو عيادة مسجلة بهذا الرقم." };
+  }
+
+  const id = makeId("clinic");
+  const baseSlug = slugify(`${name}-${area}`, id);
+  const clinic = {
+    id,
+    slug: uniqueSlug(db.clinics, baseSlug),
+    name,
+    governorate,
+    area,
+    address,
+    phone,
+    owner_name: ownerName,
+    owner_phone: ownerPhone,
+    clinic_type: clinicType,
+    status: "pending",
+    registration_status: "pending",
+    access_code: makeAccessCode("clinic"),
+    plan: "trial",
+    subscription_status: "trial",
+    trial_ends_at: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    created_at: now.toISOString(),
+    approved_at: null,
+    internal_notes: String(payload.notes || "").trim()
+  };
+
+  db.clinics.push(clinic);
+  return { clinic };
+}
+
+function ensureTenantFields(db) {
+  let changed = false;
+  db.clinics.forEach((clinic) => {
+    if (!clinic.slug) {
+      clinic.slug = uniqueSlug(db.clinics.filter((item) => item.id !== clinic.id), slugify(`${clinic.name}-${clinic.area}`, clinic.id));
+      changed = true;
+    }
+    if (!clinic.access_code) {
+      clinic.access_code = makeAccessCode("clinic");
+      changed = true;
+    }
+    if (!clinic.plan) {
+      clinic.plan = "trial";
+      changed = true;
+    }
+    if (!clinic.subscription_status) {
+      clinic.subscription_status = clinic.status === "active" ? "trial" : "pending";
+      changed = true;
+    }
+    if (!clinic.registration_status) {
+      clinic.registration_status = clinic.status === "active" ? "approved" : clinic.status || "pending";
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 function upsertNamedItem(collection, payload, prefix) {
   const name = String(payload.name || "").trim();
   if (!name) return { error: "الاسم مطلوب." };
@@ -783,7 +960,11 @@ async function handleApi(request, response, url) {
   const method = request.method;
 
   try {
-    const auth = getRequestAuth(request);
+    const db = await readDb();
+    const normalizedTenants = ensureTenantFields(db);
+    if (normalizedTenants) await writeDb(db);
+    const auth = resolveRequestAuth(db, request);
+
     if (method === "GET" && url.pathname === "/api/auth/check") {
       const requiredLevel = auth.role === "super_admin" ? "super_admin" : "staff";
       if (!hasRequiredAccess(auth, requiredLevel)) {
@@ -803,12 +984,10 @@ async function handleApi(request, response, url) {
       return sendError(response, 401, "هذا المسار يحتاج صلاحية دخول.");
     }
 
-    const db = await readDb();
-
     if (method === "GET" && url.pathname === "/api/bootstrap") {
       return sendJson(response, 200, {
         ok: true,
-        data: auth.isStaff ? fullBootstrap(db) : publicBootstrap(db)
+        data: auth.isStaff ? fullBootstrap(db, auth) : publicBootstrap(db)
       });
     }
 
@@ -816,6 +995,21 @@ async function handleApi(request, response, url) {
       return sendJson(response, 200, {
         ok: true,
         data: filterDoctors(db, url.searchParams)
+      });
+    }
+
+    if (method === "GET" && segments[1] === "clinics" && segments[2] && segments[3] === "public") {
+      const clinic = findClinicBySlug(db, segments[2]);
+      if (!clinic || clinic.status !== "active") return sendError(response, 404, "العيادة غير متاحة حالياً.");
+      const clinicDoctors = db.doctors
+        .filter((doctor) => doctor.clinic_id === clinic.id && doctor.status === "active")
+        .map((doctor) => publicDoctor(db, doctor));
+      return sendJson(response, 200, {
+        ok: true,
+        data: {
+          clinic: publicClinic(clinic),
+          doctors: clinicDoctors
+        }
       });
     }
 
@@ -842,6 +1036,17 @@ async function handleApi(request, response, url) {
       return sendJson(response, 200, {
         ok: true,
         data: appointmentDays(db, doctor.id, 14)
+      });
+    }
+
+    if (method === "POST" && url.pathname === "/api/clinic-registrations") {
+      const payload = await parseBody(request);
+      const result = createClinicRegistration(db, payload);
+      if (result.error) return sendError(response, 400, result.error);
+      await writeDb(db);
+      return sendJson(response, 201, {
+        ok: true,
+        data: publicClinic(result.clinic)
       });
     }
 
@@ -878,6 +1083,8 @@ async function handleApi(request, response, url) {
 
     if (method === "PATCH" && segments[1] === "bookings" && segments[2]) {
       const payload = await parseBody(request);
+      const existingBooking = db.bookings.find((item) => item.booking_code === segments[2] || item.id === segments[2]);
+      if (existingBooking && !canAccessClinic(auth, existingBooking.clinic_id)) return sendError(response, 403, "لا تملك صلاحية تعديل هذا الحجز.");
       const result = patchBooking(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
       await writeDb(db);
@@ -909,14 +1116,25 @@ async function handleApi(request, response, url) {
 
     if (method === "GET" && url.pathname === "/api/dashboard/today") {
       await writeDb(db);
+      if (auth.clinicId) {
+        const requestedDoctorId = url.searchParams.get("doctorId");
+        if (requestedDoctorId && !canAccessDoctor(db, auth, requestedDoctorId)) {
+          return sendError(response, 403, "لا تملك صلاحية عرض هذا الطبيب.");
+        }
+        if (!requestedDoctorId) {
+          const firstDoctor = db.doctors.find((doctor) => doctor.clinic_id === auth.clinicId);
+          if (firstDoctor) url.searchParams.set("doctorId", firstDoctor.id);
+        }
+      }
       return sendJson(response, 200, {
         ok: true,
-        data: todayDashboard(db, url.searchParams)
+        data: todayDashboard(db, url.searchParams, auth)
       });
     }
 
     if (method === "PATCH" && segments[1] === "queue" && segments[2] && segments[3]) {
       const payload = await parseBody(request);
+      if (!canAccessDoctor(db, auth, segments[2])) return sendError(response, 403, "لا تملك صلاحية تعديل هذا الدور.");
       const result = patchQueue(db, segments[2], segments[3], payload);
       if (result.error) return sendError(response, 400, result.error);
       await writeDb(db);
@@ -928,6 +1146,8 @@ async function handleApi(request, response, url) {
 
     if (method === "PATCH" && segments[1] === "schedules" && segments[2]) {
       const payload = await parseBody(request);
+      const schedule = db.schedules.find((item) => item.id === segments[2]);
+      if (schedule && !canAccessDoctor(db, auth, schedule.doctor_id)) return sendError(response, 403, "لا تملك صلاحية تعديل هذا الجدول.");
       const result = updateSchedule(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
       await writeDb(db);
@@ -936,6 +1156,7 @@ async function handleApi(request, response, url) {
 
     if (method === "POST" && url.pathname === "/api/doctors") {
       const payload = await parseBody(request);
+      if (auth.clinicId) payload.clinic_id = auth.clinicId;
       const result = createDoctor(db, payload);
       if (result.error) return sendError(response, 400, result.error);
       await writeDb(db);
@@ -944,6 +1165,8 @@ async function handleApi(request, response, url) {
 
     if (method === "PATCH" && segments[1] === "doctors" && segments[2]) {
       const payload = await parseBody(request);
+      if (!canAccessDoctor(db, auth, segments[2])) return sendError(response, 403, "لا تملك صلاحية تعديل هذا الطبيب.");
+      if (auth.clinicId) delete payload.clinic_id;
       const result = updateDoctor(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
       await writeDb(db);
@@ -957,6 +1180,13 @@ async function handleApi(request, response, url) {
       ["name", "governorate", "area", "address", "phone", "status"].forEach((field) => {
         if (payload[field] !== undefined) clinic[field] = payload[field];
       });
+      if (payload.status === "active") {
+        clinic.registration_status = "approved";
+        clinic.approved_at = clinic.approved_at || new Date().toISOString();
+      }
+      if (payload.status === "inactive") {
+        clinic.registration_status = clinic.registration_status === "pending" ? "rejected" : "inactive";
+      }
       await writeDb(db);
       return sendJson(response, 200, { ok: true, data: clinic });
     }

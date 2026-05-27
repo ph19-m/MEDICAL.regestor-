@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=5";
+import { api } from "./api.js?v=6";
 import {
   bookingCard,
   bookingTable,
@@ -13,7 +13,7 @@ import {
   queueStatusCard,
   statusBadge,
   whatsAppShareButton
-} from "./components.js?v=5";
+} from "./components.js?v=6";
 
 const app = document.querySelector("#app");
 
@@ -46,6 +46,10 @@ function clearTimer() {
 
 async function refreshData() {
   state.data = await api.bootstrap();
+  if (state.dashboardDoctorId && !state.data.doctors.some((doctor) => doctor.id === state.dashboardDoctorId)) {
+    state.dashboardDoctorId = "";
+    localStorage.removeItem("dawri-dashboard-doctor");
+  }
   if (!state.dashboardDoctorId && state.data.doctors.length) {
     state.dashboardDoctorId = state.data.doctors[0].id;
   }
@@ -387,6 +391,48 @@ async function doctorProfilePage(id) {
   );
 }
 
+async function clinicPublicPage(slug) {
+  const data = await api.clinicPublic(slug);
+  const clinic = data.clinic;
+  const doctors = data.doctors || [];
+  render(
+    `
+      <section class="section profile-header clinic-public-header">
+        <div>
+          <span class="eyebrow">صفحة عيادة خاصة</span>
+          <h1>${escapeHtml(clinic.name)}</h1>
+          <p>${escapeHtml(clinic.address)}</p>
+          <div class="profile-actions">
+            <a class="btn primary large" href="#clinic-doctors">احجز عند طبيب</a>
+            <a class="btn secondary large" href="/track" data-link>متابعة دوري</a>
+          </div>
+        </div>
+        <aside class="profile-summary">
+          <dl class="meta-grid">
+            <div><dt>المحافظة</dt><dd>${escapeHtml(clinic.governorate)}</dd></div>
+            <div><dt>المنطقة</dt><dd>${escapeHtml(clinic.area)}</dd></div>
+            <div><dt>الهاتف</dt><dd dir="ltr">${escapeHtml(clinic.phone)}</dd></div>
+            <div><dt>حالة العيادة</dt><dd>${statusBadge(clinic.status)}</dd></div>
+          </dl>
+        </aside>
+      </section>
+      <section class="section" id="clinic-doctors">
+        <div class="section-heading inline">
+          <div>
+            <span class="eyebrow">أطباء العيادة</span>
+            <h2>اختر الطبيب واحجز دورك</h2>
+          </div>
+          <span class="chip">${escapeHtml(doctors.length)} طبيب</span>
+        </div>
+        <div class="doctor-grid">
+          ${doctors.length ? doctors.map(doctorCard).join("") : emptyState("لا يوجد أطباء مفعّلين بعد", "بعد موافقة العيادة يمكن إضافة الأطباء والجداول من لوحة العيادة.")}
+        </div>
+      </section>
+    `,
+    clinic.name
+  );
+}
+
 async function bookingPage(doctorId) {
   const doctor = await api.doctor(doctorId);
   const availability = await api.availability(doctorId);
@@ -651,25 +697,63 @@ function clinicRegisterPage() {
       <section class="section page-title">
         <span class="eyebrow">للعيادات</span>
         <h1>سجل عيادتك الآن</h1>
-        <p>هذه نسخة MVP، لذلك نموذج التسجيل يجهز الطلب للعرض على مالك المنصة قبل الربط الحقيقي.</p>
+        <p>قدّم طلب الانضمام، ومالك المنصة يراجع العيادة ثم يفعّل رابطها ولوحة التحكم الخاصة بها.</p>
       </section>
       <section class="section narrow">
         <form class="form-grid" id="clinic-register-form">
           <label><span>اسم العيادة</span><input required name="clinic_name" placeholder="مثلاً عيادة الكرادة التخصصية" /></label>
           <label><span>رقم الهاتف</span><input required name="phone" dir="ltr" inputmode="tel" placeholder="07xxxxxxxxx" /></label>
+          <label><span>اسم المسؤول</span><input name="owner_name" placeholder="اسم صاحب العيادة أو المدير" /></label>
+          <label><span>واتساب المسؤول</span><input name="owner_phone" dir="ltr" inputmode="tel" placeholder="07xxxxxxxxx" /></label>
+          <label><span>نوع العيادة</span><select name="clinic_type"><option>عيادة خاصة</option><option>مجمع طبي</option><option>مركز تخصصي</option><option>مختبر أو أشعة</option></select></label>
           <label><span>المحافظة</span><select name="governorate">${optionList(state.data.governorates, "", "اختر المحافظة")}</select></label>
           <label><span>المنطقة</span><input name="area" placeholder="المنطقة" /></label>
           <label class="wide"><span>العنوان</span><textarea rows="3" name="address"></textarea></label>
+          <label class="wide"><span>ملاحظات إضافية</span><textarea rows="3" name="notes" placeholder="عدد الأطباء، الاختصاصات، أو أوقات الدوام المتوقعة"></textarea></label>
           <button class="btn primary large wide" type="submit">إرسال طلب التسجيل</button>
         </form>
+        <div class="notice">
+          <strong>ماذا يحدث بعد التسجيل؟</strong>
+          <p>يبقى الطلب بانتظار الموافقة. بعد التفعيل تحصل العيادة على رابط خاص وكود دخول للداشبورد.</p>
+        </div>
       </section>
     `,
     "سجل عيادتك"
   );
-  document.querySelector("#clinic-register-form")?.addEventListener("submit", (event) => {
+  document.querySelector("#clinic-register-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    toast("تم استلام طلب التسجيل التجريبي. في النسخة القادمة سيتم إنشاء حساب عيادة.", "success");
-    event.currentTarget.reset();
+    try {
+      const clinic = await api.createClinicRegistration(Object.fromEntries(new FormData(event.currentTarget)));
+      toast("تم استلام طلب العيادة وهو الآن بانتظار موافقة مالك المنصة.", "success");
+      event.currentTarget.reset();
+      render(
+        `
+          <section class="section confirmation">
+            <article class="confirmation-card">
+              <div class="confirmation-card__hero">
+                <span class="success-ring">✓</span>
+                <span class="eyebrow">تم إرسال طلب التسجيل</span>
+                <h1>${escapeHtml(clinic.name)}</h1>
+                <p>الطلب الآن بانتظار الموافقة. بعد التفعيل سيظهر رابط العيادة العام ويمكن إضافة الأطباء والجداول من لوحة العيادة.</p>
+              </div>
+              <dl class="confirmation-details">
+                <div><dt>حالة الطلب</dt><dd>بانتظار الموافقة</dd></div>
+                <div><dt>المحافظة</dt><dd>${escapeHtml(clinic.governorate)}</dd></div>
+                <div><dt>المنطقة</dt><dd>${escapeHtml(clinic.area)}</dd></div>
+                <div><dt>الرابط بعد التفعيل</dt><dd dir="ltr">/clinics/${escapeHtml(clinic.slug)}</dd></div>
+              </dl>
+              <div class="button-row confirmation-actions">
+                <a class="btn primary large" href="/" data-link>العودة للرئيسية</a>
+                <a class="btn secondary large" href="/login" data-link>دخول الإدارة</a>
+              </div>
+            </article>
+          </section>
+        `,
+        "تم إرسال الطلب"
+      );
+    } catch (error) {
+      toast(error.message, "error");
+    }
   });
 }
 
@@ -779,47 +863,6 @@ function loginPage() {
     navigate("/");
   });
   return;
-
-  const roles = [
-    ["patient", "Login as Patient", "متابعة وحجز كأنك مريض"],
-    ["secretary", "Login as Secretary", "إدارة حجوزات اليوم والدور"],
-    ["clinic_admin", "Login as Clinic Admin", "إدارة الأطباء والجداول"],
-    ["super_admin", "Login as Super Admin", "إدارة المنصة والإحصائيات"]
-  ];
-  render(
-    `
-      <section class="section page-title">
-        <span class="eyebrow">دخول تجريبي</span>
-        <h1>اختر الدور المناسب للعرض</h1>
-        <p>المصادقة الحقيقية موضوعة كمرحلة لاحقة. حالياً نستخدم أزرار دخول تجريبية حسب الدور.</p>
-      </section>
-      <section class="section">
-        <div class="role-grid">
-          ${roles
-            .map(
-              ([role, label, description]) => `
-                <button class="role-card ${state.role === role ? "active" : ""}" data-role="${role}">
-                  <strong>${label}</strong>
-                  <span>${description}</span>
-                </button>
-              `
-            )
-            .join("")}
-        </div>
-      </section>
-    `,
-    "تسجيل الدخول"
-  );
-  document.querySelectorAll("[data-role]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.role = button.dataset.role;
-      localStorage.setItem("dawri-role", state.role);
-      toast(`تم الدخول كـ ${roleLabels[state.role]}`, "success");
-      if (state.role === "super_admin") navigate("/admin");
-      else if (state.role === "secretary" || state.role === "clinic_admin") navigate("/dashboard");
-      else navigate("/");
-    });
-  });
 }
 
 function registerPage() {
@@ -857,6 +900,31 @@ function doctorSelect(doctors) {
 }
 
 async function dashboardTodayPage(activePath = "/dashboard") {
+  if (!state.data.doctors.length) {
+    app.innerHTML = dashboardShell(
+      activePath,
+      `
+        <div class="dashboard-toolbar">
+          <div>
+            <span class="eyebrow">إعداد العيادة</span>
+            <h1>ابدأ بإضافة أول طبيب</h1>
+          </div>
+        </div>
+        <section class="panel onboarding-panel">
+          <h2>عيادتك جاهزة للتفعيل التشغيلي</h2>
+          <p>بعد موافقة مالك المنصة، الخطوة التالية هي إضافة الطبيب وتحديد جدول الدوام حتى تظهر المواعيد للمرضى في صفحة العيادة.</p>
+          <div class="button-row">
+            <a class="btn primary" href="/dashboard/doctors" data-link>إضافة طبيب</a>
+            <a class="btn secondary" href="/dashboard/settings" data-link>بيانات العيادة</a>
+          </div>
+        </section>
+      `,
+      "لوحة العيادة"
+    );
+    setTitle("لوحة العيادة");
+    return;
+  }
+
   const data = await api.todayDashboard({
     doctorId: state.dashboardDoctorId || state.data.doctors[0]?.id,
     date: state.dashboardDate || state.data.today
@@ -1172,6 +1240,7 @@ function dashboardSettingsPage() {
                   <h3>${escapeHtml(clinic.name)}</h3>
                   <p>${escapeHtml(clinic.address)}</p>
                   <p>الهاتف: <span dir="ltr">${escapeHtml(clinic.phone)}</span></p>
+                  <p>رابط العيادة: <a dir="ltr" href="/clinics/${encodeURIComponent(clinic.slug || clinic.id)}" data-link>/clinics/${escapeHtml(clinic.slug || clinic.id)}</a></p>
                   ${statusBadge(clinic.status)}
                 </article>
               `
@@ -1237,6 +1306,7 @@ function adminDashboardPage(activePath = "/admin") {
 }
 
 function adminClinicsPage() {
+  const pendingCount = state.data.clinics.filter((clinic) => clinic.status === "pending").length;
   app.innerHTML = adminShell(
     "/admin/clinics",
     `
@@ -1244,20 +1314,29 @@ function adminClinicsPage() {
         <div>
           <span class="eyebrow">إدارة العيادات</span>
           <h1>الموافقات وحالة العيادات</h1>
+          <p class="muted">طلبات بانتظار المراجعة: ${escapeHtml(pendingCount)}</p>
         </div>
       </div>
       <section class="panel">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>العيادة</th><th>المحافظة</th><th>المنطقة</th><th>الحالة</th><th>إجراء</th></tr></thead>
+            <thead><tr><th>العيادة</th><th>المسؤول</th><th>الموقع</th><th>الرابط</th><th>كود العيادة</th><th>الحالة</th><th>إجراء</th></tr></thead>
             <tbody>
               ${state.data.clinics
                 .map(
                   (clinic) => `
                     <tr>
-                      <td>${escapeHtml(clinic.name)}</td>
-                      <td>${escapeHtml(clinic.governorate)}</td>
-                      <td>${escapeHtml(clinic.area)}</td>
+                      <td>
+                        <strong>${escapeHtml(clinic.name)}</strong>
+                        <small>${escapeHtml(clinic.clinic_type || "عيادة خاصة")}</small>
+                      </td>
+                      <td>
+                        ${escapeHtml(clinic.owner_name || "-")}
+                        <small dir="ltr">${escapeHtml(clinic.owner_phone || clinic.phone || "")}</small>
+                      </td>
+                      <td>${escapeHtml(clinic.governorate)} / ${escapeHtml(clinic.area)}</td>
+                      <td><a href="/clinics/${encodeURIComponent(clinic.slug || clinic.id)}" data-link dir="ltr">/clinics/${escapeHtml(clinic.slug || clinic.id)}</a></td>
+                      <td><code>${escapeHtml(clinic.access_code || "-")}</code></td>
                       <td>${statusBadge(clinic.status)}</td>
                       <td>
                         <button class="tiny-btn" data-clinic-status="${escapeHtml(clinic.id)}" data-status="active">موافقة</button>
@@ -1460,6 +1539,7 @@ async function route() {
     if (path === "/") return homePage();
     if (path === "/doctors") return doctorsPage();
     if (parts[0] === "doctors" && parts[1]) return doctorProfilePage(parts[1]);
+    if (parts[0] === "clinics" && parts[1]) return clinicPublicPage(parts[1]);
     if (parts[0] === "book" && parts[1]) return bookingPage(parts[1]);
     if (parts[0] === "booking-confirmation" && parts[1]) return confirmationPage(parts[1]);
     if (path === "/track") return trackPage();

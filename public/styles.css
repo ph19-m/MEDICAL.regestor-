@@ -1309,6 +1309,20 @@ table small {
   margin: 0;
 }
 
+.clinic-public-header .profile-summary {
+  align-self: stretch;
+}
+
+.onboarding-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.onboarding-panel h2,
+.onboarding-panel p {
+  margin: 0;
+}
+
 .inline-create {
   display: flex;
   gap: 10px;

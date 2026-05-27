@@ -114,6 +114,19 @@ Fallback demo codes are available if env vars are not set:
 
 Change both before using the demo with real clinics.
 
+## Multi-Clinic SaaS Flow
+
+The MVP now supports the first multi-tenant workflow:
+
+- Clinics submit registration requests from `/clinic-register`.
+- New clinics are saved as `pending` with a generated `slug`, trial plan, and private clinic access code.
+- Super admin reviews requests in `/admin/clinics`, approves active clinics, or disables them.
+- Each active clinic gets a public patient page at `/clinics/{slug}`.
+- Clinic access codes scope dashboard data to one clinic: doctors, schedules, bookings, queue sessions, and notifications.
+- Clinic staff can add doctors only to their own clinic; the server ignores any forged `clinic_id`.
+
+This is still access-code based for MVP speed. The next production step is replacing access codes with real user accounts, password reset, and session tokens.
+
 ## Vercel Deployment
 
 This MVP is now prepared for Vercel:
