@@ -111,6 +111,14 @@ function getHeader(request, name) {
   return Object.entries(request.headers || {}).find(([key]) => key.toLowerCase() === target)?.[1] || "";
 }
 
+function decodePathSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 function configuredStaffCode() {
   return process.env.STAFF_ACCESS_CODE || DEMO_STAFF_ACCESS_CODE;
 }
@@ -449,6 +457,12 @@ function publicClinic(clinic) {
   const {
     access_code: _accessCode,
     internal_notes: _internalNotes,
+    owner_name: _ownerName,
+    owner_phone: _ownerPhone,
+    plan: _plan,
+    subscription_status: _subscriptionStatus,
+    trial_ends_at: _trialEndsAt,
+    approved_at: _approvedAt,
     ...safeClinic
   } = clinic;
   return {
@@ -491,8 +505,8 @@ function publicBooking(db, booking) {
 
   return {
     ...booking,
-    doctor,
-    clinic,
+    doctor: doctor ? publicDoctor(db, doctor) : null,
+    clinic: publicClinic(clinic),
     queue_session: session,
     clinic_status: session.status,
     clinic_status_label: SESSION_LABELS[session.status] || session.status,
@@ -978,7 +992,7 @@ function upsertNamedItem(collection, payload, prefix) {
 }
 
 async function handleApi(request, response, url) {
-  const segments = url.pathname.split("/").filter(Boolean);
+  const segments = url.pathname.split("/").filter(Boolean).map(decodePathSegment);
   const method = request.method;
 
   try {
