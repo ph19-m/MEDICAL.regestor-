@@ -1,0 +1,813 @@
+{
+  "meta": {
+    "app_name": "Dawri Medical / دوري الطبي",
+    "seeded_at": "2026-05-26T22:24:57.908Z",
+    "schema_version": 1
+  },
+  "users": [
+    {
+      "id": "user-patient-demo",
+      "name": "مريض تجريبي",
+      "phone": "07700000001",
+      "email": "patient@dawri.local",
+      "password_hash": "demo-auth-placeholder",
+      "role": "patient",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "user-secretary-demo",
+      "name": "سكرتيرة العيادة",
+      "phone": "07700000002",
+      "email": "secretary@dawri.local",
+      "password_hash": "demo-auth-placeholder",
+      "role": "secretary",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "user-clinic-admin-demo",
+      "name": "مدير العيادة",
+      "phone": "07700000003",
+      "email": "clinic-admin@dawri.local",
+      "password_hash": "demo-auth-placeholder",
+      "role": "clinic_admin",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "user-super-admin-demo",
+      "name": "مالك المنصة",
+      "phone": "07700000004",
+      "email": "admin@dawri.local",
+      "password_hash": "demo-auth-placeholder",
+      "role": "super_admin",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    }
+  ],
+  "clinics": [
+    {
+      "id": "clinic-karada-smile",
+      "name": "عيادة الكرادة التخصصية",
+      "governorate": "بغداد",
+      "area": "الكرادة",
+      "address": "بغداد، الكرادة داخل، قرب ساحة كهرمانة",
+      "phone": "07701234567",
+      "status": "active",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "clinic-mansour-care",
+      "name": "مركز المنصور الطبي",
+      "governorate": "بغداد",
+      "area": "المنصور",
+      "address": "بغداد، المنصور، شارع 14 رمضان",
+      "phone": "07801234567",
+      "status": "active",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "clinic-basra-kids",
+      "name": "عيادة البصرة للأطفال",
+      "governorate": "البصرة",
+      "area": "العشار",
+      "address": "البصرة، العشار، قرب شارع الكويت",
+      "phone": "07711234567",
+      "status": "active",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "clinic-najaf-women",
+      "name": "عيادة الهدى النسائية",
+      "governorate": "النجف",
+      "area": "حي الأمير",
+      "address": "النجف، حي الأمير، مجمع العيادات",
+      "phone": "07811234567",
+      "status": "pending",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "clinic-karbala-internal",
+      "name": "عيادة كربلاء الباطنية",
+      "governorate": "كربلاء",
+      "area": "حي الحسين",
+      "address": "كربلاء، حي الحسين، مقابل الصيدلية المركزية",
+      "phone": "07721234567",
+      "status": "active",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    }
+  ],
+  "doctors": [
+    {
+      "id": "doctor-ahmed-ali",
+      "clinic_id": "clinic-karada-smile",
+      "name": "د. أحمد علي",
+      "specialty": "طب الأسنان",
+      "bio": "طبيب أسنان بخبرة 12 سنة في علاج الجذور، الحشوات التجميلية، وتنظيم خطة الزيارة بدون انتظار طويل.",
+      "fee": 25000,
+      "gender": "male",
+      "status": "active",
+      "rating": 4.7,
+      "average_waiting_time": "25 دقيقة",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "doctor-zainab-hassan",
+      "clinic_id": "clinic-mansour-care",
+      "name": "د. زينب حسن",
+      "specialty": "الجلدية",
+      "bio": "اختصاص جلدية وتجميل، متابعة للحالات المزمنة وحب الشباب والحساسية مع أوقات زيارة منظمة.",
+      "fee": 30000,
+      "gender": "female",
+      "status": "active",
+      "rating": 4.8,
+      "average_waiting_time": "20 دقيقة",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "doctor-mohammed-kadhim",
+      "clinic_id": "clinic-basra-kids",
+      "name": "د. محمد كاظم",
+      "specialty": "الأطفال",
+      "bio": "اختصاص أطفال وحديثي الولادة، يستقبل الحالات اليومية والمتابعة الدورية للطفل.",
+      "fee": 20000,
+      "gender": "male",
+      "status": "active",
+      "rating": 4.6,
+      "average_waiting_time": "30 دقيقة",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "doctor-noor-alhuda",
+      "clinic_id": "clinic-najaf-women",
+      "name": "د. نور الهدى",
+      "specialty": "النسائية والتوليد",
+      "bio": "اختصاص نسائية وتوليد، متابعة الحمل والفحوصات الدورية بخصوصية وتنظيم.",
+      "fee": 35000,
+      "gender": "female",
+      "status": "active",
+      "rating": 4.9,
+      "average_waiting_time": "35 دقيقة",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "doctor-ali-hussein",
+      "clinic_id": "clinic-karbala-internal",
+      "name": "د. علي حسين",
+      "specialty": "الباطنية",
+      "bio": "اختصاص باطنية، متابعة الضغط والسكري وأمراض الجهاز الهضمي مع نظام دور مباشر.",
+      "fee": 25000,
+      "gender": "male",
+      "status": "active",
+      "rating": 4.5,
+      "average_waiting_time": "28 دقيقة",
+      "created_at": "2026-05-26T22:24:57.908Z"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "schedule-doctor-ahmed-ali-السبت",
+      "doctor_id": "doctor-ahmed-ali",
+      "day_of_week": "السبت",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-ahmed-ali-الأحد",
+      "doctor_id": "doctor-ahmed-ali",
+      "day_of_week": "الأحد",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-ahmed-ali-الإثنين",
+      "doctor_id": "doctor-ahmed-ali",
+      "day_of_week": "الإثنين",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-ahmed-ali-الثلاثاء",
+      "doctor_id": "doctor-ahmed-ali",
+      "day_of_week": "الثلاثاء",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-ahmed-ali-الأربعاء",
+      "doctor_id": "doctor-ahmed-ali",
+      "day_of_week": "الأربعاء",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-zainab-hassan-السبت",
+      "doctor_id": "doctor-zainab-hassan",
+      "day_of_week": "السبت",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-zainab-hassan-الأحد",
+      "doctor_id": "doctor-zainab-hassan",
+      "day_of_week": "الأحد",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-zainab-hassan-الإثنين",
+      "doctor_id": "doctor-zainab-hassan",
+      "day_of_week": "الإثنين",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-zainab-hassan-الثلاثاء",
+      "doctor_id": "doctor-zainab-hassan",
+      "day_of_week": "الثلاثاء",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-zainab-hassan-الأربعاء",
+      "doctor_id": "doctor-zainab-hassan",
+      "day_of_week": "الأربعاء",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-mohammed-kadhim-السبت",
+      "doctor_id": "doctor-mohammed-kadhim",
+      "day_of_week": "السبت",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-mohammed-kadhim-الأحد",
+      "doctor_id": "doctor-mohammed-kadhim",
+      "day_of_week": "الأحد",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-mohammed-kadhim-الإثنين",
+      "doctor_id": "doctor-mohammed-kadhim",
+      "day_of_week": "الإثنين",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-mohammed-kadhim-الثلاثاء",
+      "doctor_id": "doctor-mohammed-kadhim",
+      "day_of_week": "الثلاثاء",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-mohammed-kadhim-الأربعاء",
+      "doctor_id": "doctor-mohammed-kadhim",
+      "day_of_week": "الأربعاء",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-noor-alhuda-السبت",
+      "doctor_id": "doctor-noor-alhuda",
+      "day_of_week": "السبت",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-noor-alhuda-الأحد",
+      "doctor_id": "doctor-noor-alhuda",
+      "day_of_week": "الأحد",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-noor-alhuda-الإثنين",
+      "doctor_id": "doctor-noor-alhuda",
+      "day_of_week": "الإثنين",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-noor-alhuda-الثلاثاء",
+      "doctor_id": "doctor-noor-alhuda",
+      "day_of_week": "الثلاثاء",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-noor-alhuda-الأربعاء",
+      "doctor_id": "doctor-noor-alhuda",
+      "day_of_week": "الأربعاء",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-ali-hussein-السبت",
+      "doctor_id": "doctor-ali-hussein",
+      "day_of_week": "السبت",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-ali-hussein-الأحد",
+      "doctor_id": "doctor-ali-hussein",
+      "day_of_week": "الأحد",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-ali-hussein-الإثنين",
+      "doctor_id": "doctor-ali-hussein",
+      "day_of_week": "الإثنين",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-ali-hussein-الثلاثاء",
+      "doctor_id": "doctor-ali-hussein",
+      "day_of_week": "الثلاثاء",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    },
+    {
+      "id": "schedule-doctor-ali-hussein-الأربعاء",
+      "doctor_id": "doctor-ali-hussein",
+      "day_of_week": "الأربعاء",
+      "start_time": "16:00",
+      "end_time": "21:00",
+      "max_patients": 25,
+      "average_consultation_minutes": 10,
+      "is_active": true
+    }
+  ],
+  "bookings": [
+    {
+      "id": "booking-demo-1",
+      "booking_code": "DW-100241",
+      "clinic_id": "clinic-karada-smile",
+      "doctor_id": "doctor-ahmed-ali",
+      "patient_name": "حسين جبار",
+      "patient_phone": "07705550123",
+      "patient_age": 34,
+      "patient_gender": "male",
+      "visit_reason": "ألم بالسن",
+      "booking_date": "2026-05-27",
+      "approximate_time": "16:00",
+      "time_block": "16:00 - 17:00",
+      "queue_number": 1,
+      "status": "arrived",
+      "current_queue_snapshot": 0,
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "updated_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "booking-demo-2",
+      "booking_code": "DW-100242",
+      "clinic_id": "clinic-karada-smile",
+      "doctor_id": "doctor-ahmed-ali",
+      "patient_name": "مريم صباح",
+      "patient_phone": "07705550456",
+      "patient_age": 27,
+      "patient_gender": "female",
+      "visit_reason": "حشوة تجميلية",
+      "booking_date": "2026-05-27",
+      "approximate_time": "16:10",
+      "time_block": "16:00 - 17:00",
+      "queue_number": 2,
+      "status": "booked",
+      "current_queue_snapshot": 0,
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "updated_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "booking-demo-3",
+      "booking_code": "DW-100243",
+      "clinic_id": "clinic-mansour-care",
+      "doctor_id": "doctor-zainab-hassan",
+      "patient_name": "سارة ناظم",
+      "patient_phone": "07805550123",
+      "patient_age": 22,
+      "patient_gender": "female",
+      "visit_reason": "حساسية جلدية",
+      "booking_date": "2026-05-28",
+      "approximate_time": "16:00",
+      "time_block": "16:00 - 17:00",
+      "queue_number": 1,
+      "status": "confirmed",
+      "current_queue_snapshot": 0,
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "updated_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "booking-mpn7wi6q-cnc16k",
+      "booking_code": "DW-704443",
+      "clinic_id": "clinic-karada-smile",
+      "doctor_id": "doctor-ahmed-ali",
+      "patient_name": "محمد الصادق هادي جابر",
+      "patient_phone": "07767088664",
+      "patient_age": 20,
+      "patient_gender": "male",
+      "visit_reason": "مراجعة",
+      "booking_date": "2026-05-27",
+      "approximate_time": "16:20",
+      "time_block": "18:00 - 19:00",
+      "queue_number": 3,
+      "status": "booked",
+      "current_queue_snapshot": 0,
+      "created_at": "2026-05-26T22:39:24.434Z",
+      "updated_at": "2026-05-26T22:39:24.434Z"
+    },
+    {
+      "id": "booking-mpn7xyme-3cjjew",
+      "booking_code": "DW-736667",
+      "clinic_id": "clinic-karada-smile",
+      "doctor_id": "doctor-ahmed-ali",
+      "patient_name": "هادي جابر",
+      "patient_phone": "07767088668",
+      "patient_age": 50,
+      "patient_gender": "male",
+      "visit_reason": "",
+      "booking_date": "2026-05-27",
+      "approximate_time": "16:30",
+      "time_block": "18:00 - 19:00",
+      "queue_number": 4,
+      "status": "booked",
+      "current_queue_snapshot": 0,
+      "created_at": "2026-05-26T22:40:32.390Z",
+      "updated_at": "2026-05-26T22:40:32.390Z"
+    },
+    {
+      "id": "booking-mpn8ssin-aia7xl",
+      "booking_code": "DW-624237",
+      "clinic_id": "clinic-karada-smile",
+      "doctor_id": "doctor-ahmed-ali",
+      "patient_name": "محمد الصادق هادي جابر",
+      "patient_phone": "07767088554",
+      "patient_age": "",
+      "patient_gender": "male",
+      "visit_reason": "",
+      "booking_date": "2026-05-27",
+      "approximate_time": "16:40",
+      "time_block": "18:00 - 19:00",
+      "queue_number": 5,
+      "status": "booked",
+      "current_queue_snapshot": 0,
+      "created_at": "2026-05-26T23:04:30.815Z",
+      "updated_at": "2026-05-26T23:04:30.815Z"
+    },
+    {
+      "id": "booking-mpn8ug2b-plkf7m",
+      "booking_code": "DW-320538",
+      "clinic_id": "clinic-mansour-care",
+      "doctor_id": "doctor-zainab-hassan",
+      "patient_name": "محمد الصادق هادي جابر",
+      "patient_phone": "07767088665",
+      "patient_age": "",
+      "patient_gender": "male",
+      "visit_reason": "",
+      "booking_date": "2026-05-27",
+      "approximate_time": "16:00",
+      "time_block": "17:00 - 18:00",
+      "queue_number": 1,
+      "status": "booked",
+      "current_queue_snapshot": 0,
+      "created_at": "2026-05-26T23:05:47.987Z",
+      "updated_at": "2026-05-26T23:05:47.987Z"
+    },
+    {
+      "id": "booking-mpn8v466-9a289h",
+      "booking_code": "DW-822929",
+      "clinic_id": "clinic-mansour-care",
+      "doctor_id": "doctor-zainab-hassan",
+      "patient_name": "محمد الصادق هادي جابر",
+      "patient_phone": "07767088665",
+      "patient_age": "",
+      "patient_gender": "male",
+      "visit_reason": "",
+      "booking_date": "2026-05-30",
+      "approximate_time": "16:00",
+      "time_block": "16:00 - 17:00",
+      "queue_number": 1,
+      "status": "booked",
+      "current_queue_snapshot": 0,
+      "created_at": "2026-05-26T23:06:19.230Z",
+      "updated_at": "2026-05-26T23:06:19.230Z"
+    }
+  ],
+  "queueSessions": [
+    {
+      "id": "queue-demo-1",
+      "clinic_id": "clinic-karada-smile",
+      "doctor_id": "doctor-ahmed-ali",
+      "date": "2026-05-27",
+      "current_queue_number": 0,
+      "status": "not_started",
+      "delay_message": "",
+      "started_at": null,
+      "closed_at": null,
+      "delay_reason": "",
+      "delay_duration_minutes": 0
+    },
+    {
+      "id": "queue-mpn8ug2b-3a0nxe",
+      "clinic_id": "clinic-mansour-care",
+      "doctor_id": "doctor-zainab-hassan",
+      "date": "2026-05-27",
+      "current_queue_number": 0,
+      "status": "not_started",
+      "delay_message": "",
+      "delay_reason": "",
+      "delay_duration_minutes": 0,
+      "started_at": null,
+      "closed_at": null
+    },
+    {
+      "id": "queue-mpn8v466-taq4ei",
+      "clinic_id": "clinic-mansour-care",
+      "doctor_id": "doctor-zainab-hassan",
+      "date": "2026-05-30",
+      "current_queue_number": 0,
+      "status": "not_started",
+      "delay_message": "",
+      "delay_reason": "",
+      "delay_duration_minutes": 0,
+      "started_at": null,
+      "closed_at": null
+    }
+  ],
+  "notifications": [
+    {
+      "id": "notification-mpn7wi6q-3l2quw",
+      "booking_id": "booking-mpn7wi6q-cnc16k",
+      "type": "in_app",
+      "message": "تم تأكيد حجزك برقم دور 3. يرجى متابعة الدور قبل التوجه إلى العيادة.",
+      "status": "sent",
+      "created_at": "2026-05-26T22:39:24.434Z"
+    },
+    {
+      "id": "notification-mpn7xyme-eg3vt5",
+      "booking_id": "booking-mpn7xyme-3cjjew",
+      "type": "in_app",
+      "message": "تم تأكيد حجزك برقم دور 4. يرجى متابعة الدور قبل التوجه إلى العيادة.",
+      "status": "sent",
+      "created_at": "2026-05-26T22:40:32.390Z"
+    },
+    {
+      "id": "notification-mpn8ssin-0kxfd2",
+      "booking_id": "booking-mpn8ssin-aia7xl",
+      "type": "in_app",
+      "message": "تم تأكيد حجزك برقم دور 5. يرجى متابعة الدور قبل التوجه إلى العيادة.",
+      "status": "sent",
+      "created_at": "2026-05-26T23:04:30.815Z"
+    },
+    {
+      "id": "notification-mpn8ug2b-vjaiyy",
+      "booking_id": "booking-mpn8ug2b-plkf7m",
+      "type": "in_app",
+      "message": "تم تأكيد حجزك برقم دور 1. يرجى متابعة الدور قبل التوجه إلى العيادة.",
+      "status": "sent",
+      "created_at": "2026-05-26T23:05:47.987Z"
+    },
+    {
+      "id": "notification-mpn8v466-9sfoq0",
+      "booking_id": "booking-mpn8v466-9a289h",
+      "type": "in_app",
+      "message": "تم تأكيد حجزك برقم دور 1. يرجى متابعة الدور قبل التوجه إلى العيادة.",
+      "status": "sent",
+      "created_at": "2026-05-26T23:06:19.230Z"
+    }
+  ],
+  "specialties": [
+    {
+      "id": "spec-dental",
+      "name": "طب الأسنان",
+      "status": "active"
+    },
+    {
+      "id": "spec-derma",
+      "name": "الجلدية",
+      "status": "active"
+    },
+    {
+      "id": "spec-obgyn",
+      "name": "النسائية والتوليد",
+      "status": "active"
+    },
+    {
+      "id": "spec-pediatrics",
+      "name": "الأطفال",
+      "status": "active"
+    },
+    {
+      "id": "spec-internal",
+      "name": "الباطنية",
+      "status": "active"
+    },
+    {
+      "id": "spec-eye",
+      "name": "العيون",
+      "status": "active"
+    },
+    {
+      "id": "spec-ent",
+      "name": "الأنف والأذن والحنجرة",
+      "status": "active"
+    },
+    {
+      "id": "spec-ortho",
+      "name": "العظام",
+      "status": "active"
+    },
+    {
+      "id": "spec-heart",
+      "name": "القلب",
+      "status": "active"
+    },
+    {
+      "id": "spec-urology",
+      "name": "المسالك البولية",
+      "status": "active"
+    }
+  ],
+  "governorates": [
+    {
+      "id": "gov-baghdad",
+      "name": "بغداد",
+      "areas": [
+        "الكرادة",
+        "المنصور",
+        "زيونة",
+        "الأعظمية",
+        "الحارثية"
+      ]
+    },
+    {
+      "id": "gov-basra",
+      "name": "البصرة",
+      "areas": [
+        "العشار",
+        "الجزائر",
+        "البراضعية"
+      ]
+    },
+    {
+      "id": "gov-nineveh",
+      "name": "نينوى",
+      "areas": [
+        "الموصل الجديدة",
+        "الزهور",
+        "الدواسة"
+      ]
+    },
+    {
+      "id": "gov-erbil",
+      "name": "أربيل",
+      "areas": [
+        "عينكاوة",
+        "شارع 60",
+        "الإسكان"
+      ]
+    },
+    {
+      "id": "gov-najaf",
+      "name": "النجف",
+      "areas": [
+        "حي الأمير",
+        "شارع المدينة",
+        "الحنانة"
+      ]
+    },
+    {
+      "id": "gov-karbala",
+      "name": "كربلاء",
+      "areas": [
+        "حي الحسين",
+        "العباسية",
+        "سيف سعد"
+      ]
+    },
+    {
+      "id": "gov-dhiqar",
+      "name": "ذي قار",
+      "areas": [
+        "الناصرية",
+        "الشطرة",
+        "سوق الشيوخ"
+      ]
+    },
+    {
+      "id": "gov-babil",
+      "name": "بابل",
+      "areas": [
+        "الحلة",
+        "الإمام",
+        "جبلة"
+      ]
+    },
+    {
+      "id": "gov-anbar",
+      "name": "الأنبار",
+      "areas": [
+        "الرمادي",
+        "الفلوجة",
+        "هيت"
+      ]
+    },
+    {
+      "id": "gov-diyala",
+      "name": "ديالى",
+      "areas": [
+        "بعقوبة",
+        "المقدادية",
+        "الخالص"
+      ]
+    }
+  ],
+  "revenue": {
+    "placeholder_monthly_iqd": 0
+  },
+  "constants": {
+    "week_days_ar": [
+      "الأحد",
+      "الإثنين",
+      "الثلاثاء",
+      "الأربعاء",
+      "الخميس",
+      "الجمعة",
+      "السبت"
+    ]
+  }
+}

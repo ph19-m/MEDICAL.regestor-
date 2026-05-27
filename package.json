@@ -1,0 +1,16 @@
+{
+  "name": "dawri-medical-mvp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dawri Medical / دوري الطبي MVP for Iraqi private clinic appointment and queue management.",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node server/server.js",
+    "seed": "node server/reset-db.js",
+    "asset:hero": "node server/create-hero-image.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
