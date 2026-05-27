@@ -1,8 +1,13 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { createSeedData } = require("./seed");
 
-const DATA_DIR = path.join(__dirname, "..", "data");
+const SOURCE_DATA_DIR = path.join(__dirname, "..", "data");
+const SOURCE_DB_PATH = path.join(SOURCE_DATA_DIR, "db.json");
+const DATA_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), "dawri-medical")
+  : SOURCE_DATA_DIR;
 const DB_PATH = path.join(DATA_DIR, "db.json");
 
 function ensureDb() {
@@ -11,6 +16,10 @@ function ensureDb() {
   }
 
   if (!fs.existsSync(DB_PATH)) {
+    if (process.env.VERCEL && fs.existsSync(SOURCE_DB_PATH)) {
+      fs.copyFileSync(SOURCE_DB_PATH, DB_PATH);
+      return;
+    }
     writeDb(createSeedData());
   }
 }

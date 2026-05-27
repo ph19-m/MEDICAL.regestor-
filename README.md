@@ -71,3 +71,19 @@ The app intentionally avoids promising exact appointment times. It combines appr
 - Clinic queue sessions support: `open`, `delayed`, `paused`, `closed`, and `doctor_absent`, with delay reason and estimated delay duration.
 - Secretary dashboard includes practical queue controls, delay controls, clinic close/paused/doctor absent states, and patient status actions.
 - Super admin dashboard has visual statistics and management placeholders for clinic approval, doctors, specialties, governorates, and areas.
+
+## Vercel Deployment
+
+This MVP is now prepared for Vercel:
+
+- Static files are served from `public/`.
+- Client-side routes are rewritten to `/index.html` through `vercel.json`.
+- API routes under `/api/*` are handled by `api/[...path].js`.
+- On Vercel, the demo JSON database is copied to a writable `/tmp/dawri-medical/db.json` file. This is suitable for demos only; production should use PostgreSQL or Supabase.
+
+Recommended Vercel settings:
+
+- Framework preset: Other
+- Build command: `npm run build`
+- Output directory: leave empty/default
+- Install command: `npm install`

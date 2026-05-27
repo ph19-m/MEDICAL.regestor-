@@ -83,6 +83,19 @@ function sendError(response, statusCode, message, details = {}) {
 }
 
 function parseBody(request) {
+  if (request.body !== undefined) {
+    if (Buffer.isBuffer(request.body)) {
+      const text = request.body.toString("utf8");
+      return Promise.resolve(text.trim() ? JSON.parse(text) : {});
+    }
+    if (typeof request.body === "string") {
+      return Promise.resolve(request.body.trim() ? JSON.parse(request.body) : {});
+    }
+    if (typeof request.body === "object" && request.body !== null) {
+      return Promise.resolve(request.body);
+    }
+  }
+
   return new Promise((resolve, reject) => {
     let body = "";
     request.on("data", (chunk) => {
@@ -922,15 +935,27 @@ function serveStatic(request, response, url) {
   });
 }
 
-const server = http.createServer((request, response) => {
-  const url = new URL(request.url, `http://${request.headers.host}`);
-  if (url.pathname.startsWith("/api/")) {
-    handleApi(request, response, url);
-    return;
-  }
-  serveStatic(request, response, url);
-});
+function createAppServer() {
+  return http.createServer((request, response) => {
+    const url = new URL(request.url, `http://${request.headers.host}`);
+    if (url.pathname.startsWith("/api/")) {
+      handleApi(request, response, url);
+      return;
+    }
+    serveStatic(request, response, url);
+  });
+}
 
-server.listen(PORT, () => {
-  console.log(`Dawri Medical MVP is running at http://localhost:${PORT}`);
-});
+const server = createAppServer();
+
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`Dawri Medical MVP is running at http://localhost:${PORT}`);
+  });
+}
+
+module.exports = {
+  createAppServer,
+  handleApi,
+  serveStatic
+};

@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "functions": {
+    "api/[...path].js": {
+      "includeFiles": "data/db.json"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/:path((?!api/|assets/|js/|styles.css|favicon.ico).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
+  ]
+}
