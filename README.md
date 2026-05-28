@@ -1,15 +1,15 @@
 # Dawri Medical / دوري الطبي
 
-MVP web application for Iraqi private clinic appointment and queue management.
+SaaS web application for Iraqi private clinic appointment and queue management.
 
-## What This MVP Includes
+## What This SaaS Includes
 
 - Arabic-first RTL responsive web UI
 - Patient doctor search, doctor profile, booking flow, confirmation, and live queue tracking
 - Clinic secretary dashboard for today's bookings, patient status changes, and queue controls
 - Clinic admin schedule and doctor management screens
 - Super admin dashboard for platform stats, clinics, specialties, governorates, areas, and bookings
-- Node.js API server with a JSON-backed mock database in `data/db.json`
+- Node.js API server with PostgreSQL/Supabase persistence and a JSON fallback for local development
 - Business rules for duplicate bookings, max daily capacity, automatic queue numbers, approximate times, cancellation, and live queue updates
 
 ## Run Locally
@@ -64,7 +64,7 @@ The app intentionally avoids promising exact appointment times. It combines appr
 
 > احجز دورك، تابع رقمك، وروح للعيادة بس يقرب موعدك.
 
-## Latest MVP Upgrade
+## Latest SaaS Upgrade
 
 - Professional Arabic RTL healthcare SaaS UI polish across homepage, booking, tracking, dashboard, and admin.
 - Upgraded booking confirmation with full booking details, remaining patients, queue progress, and WhatsApp share link.
@@ -76,6 +76,8 @@ The app intentionally avoids promising exact appointment times. It combines appr
 ## PostgreSQL / Supabase
 
 The app now uses PostgreSQL automatically when `DATABASE_URL` is available. Without `DATABASE_URL`, it keeps using `data/db.json` for local demos.
+
+Database writes are scoped to the changed collection whenever possible, so saving owner dashboard approvals, clinic settings, bookings, schedules, and queue updates avoids rewriting the full database.
 
 Supabase setup:
 
@@ -116,7 +118,7 @@ Change both before using the demo with real clinics.
 
 ## Multi-Clinic SaaS Flow
 
-The MVP now supports the first multi-tenant workflow:
+The app supports the first multi-tenant SaaS workflow:
 
 - Clinics submit registration requests from `/clinic-register`.
 - New clinics are saved as `pending` with a generated `slug`, trial plan, and private clinic access code.
@@ -126,12 +128,14 @@ The MVP now supports the first multi-tenant workflow:
 - Clinic staff can add doctors only to their own clinic; the server ignores any forged `clinic_id`.
 - Clinic registration confirmation includes a WhatsApp handoff to the platform owner number `07767088664`.
 - The clinic access code is not delivered automatically to applicants. The platform owner approves the clinic, then sends the code manually from `/admin/clinics` through the prepared WhatsApp message.
+- Each clinic has SaaS settings for trial plan status and WhatsApp booking delivery from the clinic dashboard.
+- Clinic staff can send booking details to the patient's WhatsApp from the daily bookings table. Fully automatic background sending is prepared for WhatsApp Business API integration.
 
 This is still access-code based for MVP speed. The next production step is replacing access codes with real user accounts, password reset, and session tokens.
 
 ## Vercel Deployment
 
-This MVP is now prepared for Vercel:
+This SaaS is prepared for Vercel:
 
 - Static files are served from `public/`.
 - Client-side routes are rewritten to `/index.html` through `vercel.json`.

@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=7";
+import { api } from "./api.js?v=8";
 import {
   bookingCard,
   bookingTable,
@@ -15,7 +15,7 @@ import {
   queueStatusCard,
   statusBadge,
   whatsAppShareButton
-} from "./components.js?v=7";
+} from "./components.js?v=8";
 
 const app = document.querySelector("#app");
 
@@ -880,7 +880,7 @@ function registerPage() {
       <section class="section page-title">
         <span class="eyebrow">حساب جديد</span>
         <h1>تسجيل حساب مريض</h1>
-        <p>في MVP يمكن الحجز بدون حساب. هذه الصفحة جاهزة للربط مع نظام المصادقة لاحقاً.</p>
+        <p>في نسخة SaaS الحالية يمكن الحجز بدون حساب مريض، مع تجهيز النظام لإضافة حسابات المرضى لاحقاً.</p>
       </section>
       <section class="section narrow">
         <form class="form-grid">
@@ -968,7 +968,10 @@ async function dashboardTodayPage(activePath = "/dashboard") {
           </div>
           ${statusBadge(data.session?.status || "not_started")}
         </div>
-        ${bookingTable(data.bookings)}
+        ${bookingTable(data.bookings, true, {
+          whatsappEnabled: data.clinic_settings?.whatsapp_booking_enabled !== false,
+          origin: window.location.origin
+        })}
       </section>
     `,
     "لوحة العيادة"
@@ -1250,21 +1253,59 @@ function dashboardSettingsPage() {
                   <p>${escapeHtml(clinic.address)}</p>
                   <p>الهاتف: <span dir="ltr">${escapeHtml(clinic.phone)}</span></p>
                   <p>رابط العيادة: <a dir="ltr" href="/clinics/${encodeURIComponent(clinic.slug || clinic.id)}" data-link>/clinics/${escapeHtml(clinic.slug || clinic.id)}</a></p>
+                  <p>الخطة: ${escapeHtml(clinic.plan || "trial")} · الاشتراك: ${escapeHtml(clinic.subscription_status || "trial")}</p>
                   ${statusBadge(clinic.status)}
+                  <form class="clinic-settings-form" data-clinic-settings="${escapeHtml(clinic.id)}">
+                    <label class="check-row">
+                      <input type="checkbox" name="whatsapp_booking_enabled" ${clinic.whatsapp_booking_enabled !== false ? "checked" : ""} />
+                      <span>تفعيل إرسال تفاصيل الحجز للمريض عبر واتساب من لوحة العيادة</span>
+                    </label>
+                    <label>
+                      <span>رقم واتساب العيادة</span>
+                      <input name="whatsapp_sender_phone" dir="ltr" inputmode="tel" placeholder="07xxxxxxxxx" value="${escapeHtml(clinic.whatsapp_sender_phone || clinic.phone || "")}" />
+                    </label>
+                    <label>
+                      <span>طريقة الإرسال</span>
+                      <select name="whatsapp_delivery_mode">
+                        <option value="manual_handoff" ${clinic.whatsapp_delivery_mode !== "official_api_ready" ? "selected" : ""}>زر إرسال سريع عبر wa.me</option>
+                        <option value="official_api_ready" ${clinic.whatsapp_delivery_mode === "official_api_ready" ? "selected" : ""}>جاهز لربط WhatsApp Business API لاحقاً</option>
+                      </select>
+                    </label>
+                    <button class="btn primary" type="submit">حفظ إعدادات واتساب</button>
+                  </form>
                 </article>
               `
             )
             .join("")}
         </div>
         <div class="notice">
-          <strong>جاهز للنسخة القادمة</strong>
-          <p>يمكن إضافة صلاحيات السكرتارية، فروع متعددة، وربط واتساب/SMS من هذه المنطقة لاحقاً.</p>
+          <strong>وضع SaaS تشغيلي</strong>
+          <p>البيانات محفوظة في قاعدة البيانات، وكل عيادة تملك إعدادات ورسائل واتساب خاصة بها. الإرسال الرسمي التلقائي بالكامل يحتاج WhatsApp Business API عند توفر مزود الرسائل.</p>
         </div>
       </section>
     `,
     "الإعدادات"
   );
   setTitle("الإعدادات");
+  document.querySelectorAll("[data-clinic-settings]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      const payload = {
+        whatsapp_booking_enabled: formData.get("whatsapp_booking_enabled") === "on",
+        whatsapp_sender_phone: formData.get("whatsapp_sender_phone"),
+        whatsapp_delivery_mode: formData.get("whatsapp_delivery_mode")
+      };
+      try {
+        await api.updateClinicSettings(event.currentTarget.dataset.clinicSettings, payload);
+        await refreshData();
+        toast("تم حفظ إعدادات واتساب للعيادة.", "success");
+        route();
+      } catch (error) {
+        toast(error.message, "error");
+      }
+    });
+  });
 }
 
 function adminDashboardPage(activePath = "/admin") {
@@ -1284,8 +1325,8 @@ function adminDashboardPage(activePath = "/admin") {
       { label: "عيادات بانتظار الموافقة", value: stats.pending_clinic_approvals, tone: "amber" }
     ])}
     <section class="panel">
-      <h2>نطاق MVP</h2>
-      <p>النسخة الحالية تثبت رحلة المريض، توليد رقم الدور، متابعة الدور المباشر، وإدارة السكرتارية قبل ربط المدفوعات أو الرسائل الحقيقية.</p>
+      <h2>نظام SaaS تشغيلي</h2>
+      <p>النسخة الحالية تدعم تسجيل العيادات، الموافقات، عزل بيانات كل عيادة، متابعة الدور المباشر، وإرسال رسائل واتساب يدوية جاهزة من العيادة للمريض.</p>
     </section>
     <section class="admin-placeholder-grid">
       <article class="placeholder-card">

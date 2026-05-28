@@ -71,6 +71,14 @@ function createSeedData() {
       address: "بغداد، الكرادة داخل، قرب ساحة كهرمانة",
       phone: "07701234567",
       status: "active",
+      slug: "clinic-karada-smile",
+      access_code: "clinic-karada-2026",
+      plan: "trial",
+      subscription_status: "trial",
+      registration_status: "approved",
+      whatsapp_booking_enabled: true,
+      whatsapp_sender_phone: "07701234567",
+      whatsapp_delivery_mode: "manual_handoff",
       created_at: now.toISOString()
     },
     {
@@ -81,6 +89,14 @@ function createSeedData() {
       address: "بغداد، المنصور، شارع 14 رمضان",
       phone: "07801234567",
       status: "active",
+      slug: "clinic-mansour-care",
+      access_code: "clinic-mansour-2026",
+      plan: "trial",
+      subscription_status: "trial",
+      registration_status: "approved",
+      whatsapp_booking_enabled: true,
+      whatsapp_sender_phone: "07801234567",
+      whatsapp_delivery_mode: "manual_handoff",
       created_at: now.toISOString()
     },
     {
@@ -91,6 +107,14 @@ function createSeedData() {
       address: "البصرة، العشار، قرب شارع الكويت",
       phone: "07711234567",
       status: "active",
+      slug: "clinic-basra-kids",
+      access_code: "clinic-basra-2026",
+      plan: "trial",
+      subscription_status: "trial",
+      registration_status: "approved",
+      whatsapp_booking_enabled: true,
+      whatsapp_sender_phone: "07711234567",
+      whatsapp_delivery_mode: "manual_handoff",
       created_at: now.toISOString()
     },
     {
@@ -101,6 +125,14 @@ function createSeedData() {
       address: "النجف، حي الأمير، مجمع العيادات",
       phone: "07811234567",
       status: "pending",
+      slug: "clinic-najaf-women",
+      access_code: "clinic-najaf-2026",
+      plan: "trial",
+      subscription_status: "pending",
+      registration_status: "pending",
+      whatsapp_booking_enabled: true,
+      whatsapp_sender_phone: "07811234567",
+      whatsapp_delivery_mode: "manual_handoff",
       created_at: now.toISOString()
     },
     {
@@ -111,6 +143,14 @@ function createSeedData() {
       address: "كربلاء، حي الحسين، مقابل الصيدلية المركزية",
       phone: "07721234567",
       status: "active",
+      slug: "clinic-karbala-internal",
+      access_code: "clinic-karbala-2026",
+      plan: "trial",
+      subscription_status: "trial",
+      registration_status: "approved",
+      whatsapp_booking_enabled: true,
+      whatsapp_sender_phone: "07721234567",
+      whatsapp_delivery_mode: "manual_handoff",
       created_at: now.toISOString()
     }
   ];

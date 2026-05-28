@@ -43,8 +43,11 @@ function getPool() {
   return pool;
 }
 
-function tableList() {
-  return Object.values(COLLECTION_TABLES);
+function selectedCollectionEntries(collections) {
+  if (!collections) return Object.entries(COLLECTION_TABLES);
+  const requested = Array.isArray(collections) ? collections : [collections];
+  const unique = [...new Set(requested)].filter((collection) => COLLECTION_TABLES[collection]);
+  return unique.map((collection) => [collection, COLLECTION_TABLES[collection]]);
 }
 
 async function ensurePostgresSchema(client = getPool()) {
@@ -189,16 +192,18 @@ async function writePostgresDb(data, options = {}) {
 
   const pg = getPool();
   const client = await pg.connect();
+  const collectionEntries = selectedCollectionEntries(options.collections);
+  const shouldWriteMeta = !options.collections || options.includeMeta;
 
   try {
     await client.query("BEGIN");
     await ensurePostgresSchema(client);
 
-    for (const table of tableList().reverse()) {
+    for (const table of collectionEntries.map(([, table]) => table).reverse()) {
       await client.query(`DELETE FROM ${table}`);
     }
 
-    for (const [collection, table] of Object.entries(COLLECTION_TABLES)) {
+    for (const [collection, table] of collectionEntries) {
       const records = Array.isArray(data[collection]) ? data[collection] : [];
       for (const record of records) {
         await client.query(
@@ -211,20 +216,22 @@ async function writePostgresDb(data, options = {}) {
       }
     }
 
-    const metaEntries = {
-      meta: data.meta || {},
-      revenue: data.revenue || { placeholder_monthly_iqd: 0 },
-      constants: data.constants || {}
-    };
+    if (shouldWriteMeta) {
+      const metaEntries = {
+        meta: data.meta || {},
+        revenue: data.revenue || { placeholder_monthly_iqd: 0 },
+        constants: data.constants || {}
+      };
 
-    for (const [key, value] of Object.entries(metaEntries)) {
-      await client.query(
-        `INSERT INTO app_meta (key, value, updated_at)
-         VALUES ($1, $2::jsonb, NOW())
-         ON CONFLICT (key)
-         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-        [key, JSON.stringify(value)]
-      );
+      for (const [key, value] of Object.entries(metaEntries)) {
+        await client.query(
+          `INSERT INTO app_meta (key, value, updated_at)
+           VALUES ($1, $2::jsonb, NOW())
+           ON CONFLICT (key)
+           DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+          [key, JSON.stringify(value)]
+        );
+      }
     }
 
     await client.query("COMMIT");
@@ -277,8 +284,8 @@ async function readDb() {
   return readJsonDb();
 }
 
-async function writeDb(data) {
-  if (USE_POSTGRES) return writePostgresDb(data);
+async function writeDb(data, options = {}) {
+  if (USE_POSTGRES) return writePostgresDb(data, options);
   writeJsonDb(data);
   return undefined;
 }

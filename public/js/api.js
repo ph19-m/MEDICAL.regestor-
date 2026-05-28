@@ -111,6 +111,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload)
     }),
+  updateClinicSettings: (id, payload) =>
+    request(`/api/clinics/${encodeURIComponent(id)}/settings`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
   createSpecialty: (payload) =>
     request("/api/specialties", {
       method: "POST",

@@ -101,9 +101,9 @@ function setPublicBootstrapCache(data) {
   };
 }
 
-async function persistDb(db) {
+async function persistDb(db, collections) {
   publicBootstrapCache = null;
-  return writeDb(db);
+  return writeDb(db, { collections });
 }
 
 function getHeader(request, name) {
@@ -155,6 +155,7 @@ function routeProtection(method, url, segments) {
   if (method === "PATCH" && segments[1] === "schedules") return "staff";
   if (method === "POST" && url.pathname === "/api/doctors") return "staff";
   if (method === "PATCH" && segments[1] === "doctors") return "staff";
+  if (method === "PATCH" && segments[1] === "clinics" && segments[3] === "settings") return "staff";
   if (method === "PATCH" && segments[1] === "clinics") return "super_admin";
   if (method === "POST" && url.pathname === "/api/specialties") return "super_admin";
   if (method === "DELETE" && segments[1] === "specialties") return "super_admin";
@@ -224,9 +225,7 @@ function fullBootstrap(db, auth = {}) {
       owner_name: clinic.owner_name,
       owner_phone: clinic.owner_phone,
       clinic_type: clinic.clinic_type,
-      plan: clinic.plan,
-      subscription_status: clinic.subscription_status,
-      trial_ends_at: clinic.trial_ends_at
+      ...clinicSaasSettings(clinic)
     })),
     doctors: scoped.doctors.map((doctor) => publicDoctor(scoped, doctor)),
     schedules: scoped.schedules,
@@ -442,6 +441,37 @@ function getOrCreateQueueSession(db, doctorId, dateString) {
   return session;
 }
 
+function getQueueSession(db, doctorId, dateString) {
+  const doctor = findDoctor(db, doctorId);
+  if (!doctor) return null;
+
+  const session = db.queueSessions.find(
+    (item) => item.doctor_id === doctorId && item.date === dateString
+  );
+
+  if (session) {
+    session.status = normalizeSessionStatus(session.status);
+    if (session.delay_reason === undefined) session.delay_reason = session.delay_message || "";
+    if (session.delay_duration_minutes === undefined) session.delay_duration_minutes = 0;
+    if (session.delay_message === undefined) session.delay_message = "";
+    return session;
+  }
+
+  return {
+    id: "",
+    clinic_id: doctor.clinic_id,
+    doctor_id: doctorId,
+    date: dateString,
+    current_queue_number: 0,
+    status: "not_started",
+    delay_message: "",
+    delay_reason: "",
+    delay_duration_minutes: 0,
+    started_at: null,
+    closed_at: null
+  };
+}
+
 function normalizeSessionStatus(status) {
   if (status === "active") return "open";
   return SESSION_STATUSES.has(status) ? status : "not_started";
@@ -463,6 +493,9 @@ function publicClinic(clinic) {
     subscription_status: _subscriptionStatus,
     trial_ends_at: _trialEndsAt,
     approved_at: _approvedAt,
+    whatsapp_booking_enabled: _whatsAppBookingEnabled,
+    whatsapp_sender_phone: _whatsAppSenderPhone,
+    whatsapp_delivery_mode: _whatsAppDeliveryMode,
     ...safeClinic
   } = clinic;
   return {
@@ -470,6 +503,17 @@ function publicClinic(clinic) {
     slug,
     public_path: `/clinics/${encodeURIComponent(slug)}`,
     public_url: `/clinics/${encodeURIComponent(slug)}`
+  };
+}
+
+function clinicSaasSettings(clinic) {
+  return {
+    plan: clinic?.plan || "trial",
+    subscription_status: clinic?.subscription_status || "trial",
+    trial_ends_at: clinic?.trial_ends_at || "",
+    whatsapp_booking_enabled: clinic?.whatsapp_booking_enabled !== false,
+    whatsapp_sender_phone: clinic?.whatsapp_sender_phone || clinic?.phone || "",
+    whatsapp_delivery_mode: clinic?.whatsapp_delivery_mode || "manual_handoff"
   };
 }
 
@@ -498,7 +542,13 @@ function publicDoctor(db, doctor) {
 function publicBooking(db, booking) {
   const doctor = findDoctor(db, booking.doctor_id);
   const clinic = doctor ? findClinic(db, doctor.clinic_id) : findClinic(db, booking.clinic_id);
-  const session = getOrCreateQueueSession(db, booking.doctor_id, booking.booking_date);
+  const session = getQueueSession(db, booking.doctor_id, booking.booking_date) || {
+    current_queue_number: 0,
+    status: "not_started",
+    delay_message: "",
+    delay_reason: "",
+    delay_duration_minutes: 0
+  };
   const remainingPatients = Math.max(booking.queue_number - session.current_queue_number, 0);
   const schedule = findScheduleForDate(db, booking.doctor_id, booking.booking_date);
   const averageMinutes = schedule?.average_consultation_minutes || 10;
@@ -665,6 +715,24 @@ function createBooking(db, payload) {
     created_at: now
   });
 
+  if (clinic.whatsapp_booking_enabled !== false) {
+    db.notifications.push({
+      id: makeId("notification"),
+      booking_id: booking.id,
+      type: "whatsapp",
+      message: [
+        "تأكيد حجز من دوري الطبي",
+        `العيادة: ${clinic.name}`,
+        `الطبيب: ${doctor.name}`,
+        `التاريخ: ${bookingDate}`,
+        `الوقت التقريبي: ${approximateTime}`,
+        `رقم الدور: ${queueNumber}`
+      ].join("\n"),
+      status: clinic.whatsapp_delivery_mode === "official_api_ready" ? "pending" : "manual_ready",
+      created_at: now
+    });
+  }
+
   return { booking };
 }
 
@@ -675,6 +743,7 @@ function todayDashboard(db, searchParams, auth = {}) {
     : db.doctors;
   const doctorId = searchParams.get("doctorId") || availableDoctors[0]?.id;
   const doctor = findDoctor(db, doctorId);
+  const clinic = doctor ? findClinic(db, doctor.clinic_id) : null;
   const bookings = db.bookings
     .filter((booking) => booking.doctor_id === doctorId && booking.booking_date === date)
     .sort((a, b) => a.queue_number - b.queue_number)
@@ -684,6 +753,7 @@ function todayDashboard(db, searchParams, auth = {}) {
   return {
     date,
     doctor: doctor ? publicDoctor(db, doctor) : null,
+    clinic_settings: clinicSaasSettings(clinic),
     session,
     bookings,
     metrics: {
@@ -736,8 +806,8 @@ function cancelBooking(db, code) {
     return { error: "لا يمكن إلغاء الحجز بعد وصول المريض أو دخوله للطبيب." };
   }
 
-  const session = getOrCreateQueueSession(db, booking.doctor_id, booking.booking_date);
-  if (isClinicOpen(session.status) && booking.queue_number <= session.current_queue_number) {
+  const session = getQueueSession(db, booking.doctor_id, booking.booking_date);
+  if (session && isClinicOpen(session.status) && booking.queue_number <= session.current_queue_number) {
     return { error: "لا يمكن إلغاء الحجز بعد وصول الدور." };
   }
 
@@ -897,6 +967,36 @@ function updateDoctor(db, doctorId, payload) {
   return { doctor };
 }
 
+function updateClinicSettings(db, clinicId, payload) {
+  const clinic = findClinic(db, clinicId);
+  if (!clinic) return { error: "لم يتم العثور على العيادة." };
+
+  if (payload.whatsapp_booking_enabled !== undefined) {
+    clinic.whatsapp_booking_enabled =
+      payload.whatsapp_booking_enabled === true ||
+      payload.whatsapp_booking_enabled === "true" ||
+      payload.whatsapp_booking_enabled === "on";
+  }
+
+  if (payload.whatsapp_sender_phone !== undefined) {
+    const phone = String(payload.whatsapp_sender_phone || "").trim();
+    if (phone && !validatePhone(phone)) {
+      return { error: "رقم واتساب العيادة يجب أن يبدأ بـ 07 ويتكون من 11 رقم." };
+    }
+    clinic.whatsapp_sender_phone = phone || clinic.phone || "";
+  }
+
+  if (payload.whatsapp_delivery_mode !== undefined) {
+    const mode = String(payload.whatsapp_delivery_mode || "manual_handoff");
+    if (!["manual_handoff", "official_api_ready"].includes(mode)) {
+      return { error: "طريقة إرسال واتساب غير صحيحة." };
+    }
+    clinic.whatsapp_delivery_mode = mode;
+  }
+
+  return { clinic };
+}
+
 function createClinicRegistration(db, payload) {
   const name = String(payload.clinic_name || payload.name || "").trim();
   const phone = String(payload.phone || "").trim();
@@ -939,6 +1039,9 @@ function createClinicRegistration(db, payload) {
     plan: "trial",
     subscription_status: "trial",
     trial_ends_at: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    whatsapp_booking_enabled: true,
+    whatsapp_sender_phone: phone,
+    whatsapp_delivery_mode: "manual_handoff",
     created_at: now.toISOString(),
     approved_at: null,
     internal_notes: String(payload.notes || "").trim()
@@ -969,6 +1072,18 @@ function ensureTenantFields(db) {
     }
     if (!clinic.registration_status) {
       clinic.registration_status = clinic.status === "active" ? "approved" : clinic.status || "pending";
+      changed = true;
+    }
+    if (clinic.whatsapp_booking_enabled === undefined) {
+      clinic.whatsapp_booking_enabled = true;
+      changed = true;
+    }
+    if (!clinic.whatsapp_sender_phone) {
+      clinic.whatsapp_sender_phone = clinic.phone || "";
+      changed = true;
+    }
+    if (!clinic.whatsapp_delivery_mode) {
+      clinic.whatsapp_delivery_mode = "manual_handoff";
       changed = true;
     }
   });
@@ -1007,7 +1122,7 @@ async function handleApi(request, response, url) {
 
     const db = await readDb();
     const normalizedTenants = ensureTenantFields(db);
-    if (normalizedTenants) await persistDb(db);
+    if (normalizedTenants) await persistDb(db, ["clinics"]);
     const auth = resolveRequestAuth(db, request);
 
     if (method === "GET" && url.pathname === "/api/auth/check") {
@@ -1090,7 +1205,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = createClinicRegistration(db, payload);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db);
+      await persistDb(db, ["clinics"]);
       return sendJson(response, 201, {
         ok: true,
         data: publicClinic(result.clinic)
@@ -1101,7 +1216,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = createBooking(db, payload);
       if (result.error) return sendError(response, 400, result.error, result);
-      await persistDb(db);
+      await persistDb(db, ["bookings", "notifications", "queueSessions"]);
       return sendJson(response, 201, {
         ok: true,
         data: publicBooking(db, result.booking)
@@ -1111,7 +1226,6 @@ async function handleApi(request, response, url) {
     if (method === "GET" && segments[1] === "bookings" && segments[2]) {
       const booking = db.bookings.find((item) => item.booking_code === segments[2] || item.id === segments[2]);
       if (!booking) return sendError(response, 404, "لم يتم العثور على الحجز.");
-      await persistDb(db);
       return sendJson(response, 200, {
         ok: true,
         data: publicBooking(db, booking)
@@ -1121,7 +1235,7 @@ async function handleApi(request, response, url) {
     if (method === "PATCH" && segments[1] === "bookings" && segments[2] && segments[3] === "cancel") {
       const result = cancelBooking(db, segments[2]);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db);
+      await persistDb(db, ["bookings"]);
       return sendJson(response, 200, {
         ok: true,
         data: publicBooking(db, result.booking)
@@ -1134,7 +1248,7 @@ async function handleApi(request, response, url) {
       if (existingBooking && !canAccessClinic(auth, existingBooking.clinic_id)) return sendError(response, 403, "لا تملك صلاحية تعديل هذا الحجز.");
       const result = patchBooking(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db);
+      await persistDb(db, ["bookings"]);
       return sendJson(response, 200, {
         ok: true,
         data: publicBooking(db, result.booking)
@@ -1147,7 +1261,6 @@ async function handleApi(request, response, url) {
       if (code) {
         const booking = db.bookings.find((item) => item.booking_code === code);
         if (!booking) return sendError(response, 404, "لم يتم العثور على الحجز.");
-        await persistDb(db);
         return sendJson(response, 200, { ok: true, data: publicBooking(db, booking) });
       }
       if (phone) {
@@ -1155,14 +1268,12 @@ async function handleApi(request, response, url) {
           .filter((booking) => booking.patient_phone === phone)
           .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
           .map((booking) => publicBooking(db, booking));
-        await persistDb(db);
         return sendJson(response, 200, { ok: true, data: bookings });
       }
       return sendError(response, 400, "أدخل رقم الحجز أو رقم الهاتف.");
     }
 
     if (method === "GET" && url.pathname === "/api/dashboard/today") {
-      await persistDb(db);
       if (auth.clinicId) {
         const requestedDoctorId = url.searchParams.get("doctorId");
         if (requestedDoctorId && !canAccessDoctor(db, auth, requestedDoctorId)) {
@@ -1173,9 +1284,11 @@ async function handleApi(request, response, url) {
           if (firstDoctor) url.searchParams.set("doctorId", firstDoctor.id);
         }
       }
+      const dashboardData = todayDashboard(db, url.searchParams, auth);
+      await persistDb(db, ["queueSessions"]);
       return sendJson(response, 200, {
         ok: true,
-        data: todayDashboard(db, url.searchParams, auth)
+        data: dashboardData
       });
     }
 
@@ -1184,7 +1297,7 @@ async function handleApi(request, response, url) {
       if (!canAccessDoctor(db, auth, segments[2])) return sendError(response, 403, "لا تملك صلاحية تعديل هذا الدور.");
       const result = patchQueue(db, segments[2], segments[3], payload);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db);
+      await persistDb(db, ["queueSessions"]);
       return sendJson(response, 200, {
         ok: true,
         data: result.session
@@ -1197,7 +1310,7 @@ async function handleApi(request, response, url) {
       if (schedule && !canAccessDoctor(db, auth, schedule.doctor_id)) return sendError(response, 403, "لا تملك صلاحية تعديل هذا الجدول.");
       const result = updateSchedule(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db);
+      await persistDb(db, ["schedules"]);
       return sendJson(response, 200, { ok: true, data: result.schedule });
     }
 
@@ -1206,7 +1319,7 @@ async function handleApi(request, response, url) {
       if (auth.clinicId) payload.clinic_id = auth.clinicId;
       const result = createDoctor(db, payload);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db);
+      await persistDb(db, ["doctors", "schedules"]);
       return sendJson(response, 201, { ok: true, data: publicDoctor(db, result.doctor) });
     }
 
@@ -1216,8 +1329,17 @@ async function handleApi(request, response, url) {
       if (auth.clinicId) delete payload.clinic_id;
       const result = updateDoctor(db, segments[2], payload);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db);
+      await persistDb(db, ["doctors"]);
       return sendJson(response, 200, { ok: true, data: publicDoctor(db, result.doctor) });
+    }
+
+    if (method === "PATCH" && segments[1] === "clinics" && segments[2] && segments[3] === "settings") {
+      const payload = await parseBody(request);
+      if (!canAccessClinic(auth, segments[2])) return sendError(response, 403, "لا تملك صلاحية تعديل إعدادات هذه العيادة.");
+      const result = updateClinicSettings(db, segments[2], payload);
+      if (result.error) return sendError(response, 400, result.error);
+      await persistDb(db, ["clinics"]);
+      return sendJson(response, 200, { ok: true, data: { ...publicClinic(result.clinic), ...clinicSaasSettings(result.clinic) } });
     }
 
     if (method === "PATCH" && segments[1] === "clinics" && segments[2]) {
@@ -1234,7 +1356,7 @@ async function handleApi(request, response, url) {
       if (payload.status === "inactive") {
         clinic.registration_status = clinic.registration_status === "pending" ? "rejected" : "inactive";
       }
-      await persistDb(db);
+      await persistDb(db, ["clinics"]);
       return sendJson(response, 200, { ok: true, data: clinic });
     }
 
@@ -1246,13 +1368,13 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = upsertNamedItem(db.specialties, payload, "spec");
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db);
+      await persistDb(db, ["specialties"]);
       return sendJson(response, 201, { ok: true, data: result.item });
     }
 
     if (method === "DELETE" && segments[1] === "specialties" && segments[2]) {
       db.specialties = db.specialties.filter((item) => item.id !== segments[2]);
-      await persistDb(db);
+      await persistDb(db, ["specialties"]);
       return sendJson(response, 200, { ok: true });
     }
 
@@ -1260,7 +1382,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = upsertNamedItem(db.governorates, payload, "gov");
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db);
+      await persistDb(db, ["governorates"]);
       return sendJson(response, 201, { ok: true, data: result.item });
     }
 
@@ -1311,7 +1433,7 @@ const server = createAppServer();
 
 if (require.main === module) {
   server.listen(PORT, () => {
-    console.log(`Dawri Medical MVP is running at http://localhost:${PORT}`);
+    console.log(`Dawri Medical SaaS is running at http://localhost:${PORT}`);
   });
 }
 

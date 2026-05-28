@@ -51,7 +51,15 @@
       "address": "بغداد، الكرادة داخل، قرب ساحة كهرمانة",
       "phone": "07701234567",
       "status": "active",
-      "created_at": "2026-05-26T22:24:57.908Z"
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "slug": "clinic-karada-smile",
+      "access_code": "clinic-karada-2026",
+      "plan": "trial",
+      "subscription_status": "trial",
+      "registration_status": "approved",
+      "whatsapp_booking_enabled": true,
+      "whatsapp_sender_phone": "07701234567",
+      "whatsapp_delivery_mode": "manual_handoff"
     },
     {
       "id": "clinic-mansour-care",
@@ -61,7 +69,15 @@
       "address": "بغداد، المنصور، شارع 14 رمضان",
       "phone": "07801234567",
       "status": "active",
-      "created_at": "2026-05-26T22:24:57.908Z"
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "slug": "clinic-mansour-care",
+      "access_code": "clinic-mansour-2026",
+      "plan": "trial",
+      "subscription_status": "trial",
+      "registration_status": "approved",
+      "whatsapp_booking_enabled": true,
+      "whatsapp_sender_phone": "07801234567",
+      "whatsapp_delivery_mode": "manual_handoff"
     },
     {
       "id": "clinic-basra-kids",
@@ -71,7 +87,15 @@
       "address": "البصرة، العشار، قرب شارع الكويت",
       "phone": "07711234567",
       "status": "active",
-      "created_at": "2026-05-26T22:24:57.908Z"
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "slug": "clinic-basra-kids",
+      "access_code": "clinic-basra-2026",
+      "plan": "trial",
+      "subscription_status": "trial",
+      "registration_status": "approved",
+      "whatsapp_booking_enabled": true,
+      "whatsapp_sender_phone": "07711234567",
+      "whatsapp_delivery_mode": "manual_handoff"
     },
     {
       "id": "clinic-najaf-women",
@@ -81,7 +105,15 @@
       "address": "النجف، حي الأمير، مجمع العيادات",
       "phone": "07811234567",
       "status": "pending",
-      "created_at": "2026-05-26T22:24:57.908Z"
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "slug": "clinic-najaf-women",
+      "access_code": "clinic-najaf-2026",
+      "plan": "trial",
+      "subscription_status": "pending",
+      "registration_status": "pending",
+      "whatsapp_booking_enabled": true,
+      "whatsapp_sender_phone": "07811234567",
+      "whatsapp_delivery_mode": "manual_handoff"
     },
     {
       "id": "clinic-karbala-internal",
@@ -91,7 +123,15 @@
       "address": "كربلاء، حي الحسين، مقابل الصيدلية المركزية",
       "phone": "07721234567",
       "status": "active",
-      "created_at": "2026-05-26T22:24:57.908Z"
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "slug": "clinic-karbala-internal",
+      "access_code": "clinic-karbala-2026",
+      "plan": "trial",
+      "subscription_status": "trial",
+      "registration_status": "approved",
+      "whatsapp_booking_enabled": true,
+      "whatsapp_sender_phone": "07721234567",
+      "whatsapp_delivery_mode": "manual_handoff"
     }
   ],
   "doctors": [

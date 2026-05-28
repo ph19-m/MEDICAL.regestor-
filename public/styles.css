@@ -1256,6 +1256,27 @@ table small {
   gap: 12px;
 }
 
+.clinic-settings-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.check-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+}
+
 .admin-row {
   display: grid;
   grid-template-columns: 1fr auto auto;

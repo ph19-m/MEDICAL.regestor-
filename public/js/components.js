@@ -269,6 +269,21 @@ export function clinicAccessCodeWhatsAppButton(clinic, origin = window.location.
   return `<a class="tiny-btn whatsapp" href="${whatsAppLink(phone, message)}" target="_blank" rel="noopener">إرسال الكود واتساب</a>`;
 }
 
+export function bookingWhatsAppButton(booking, origin = window.location.origin) {
+  const message = [
+    "تأكيد حجز من دوري الطبي",
+    `العيادة: ${booking.clinic?.name || ""}`,
+    `الطبيب: ${booking.doctor?.name || ""}`,
+    `التاريخ: ${booking.booking_date || ""}`,
+    `الوقت التقريبي: ${booking.approximate_time || ""}`,
+    `رقم الدور: ${booking.queue_number || ""}`,
+    `رابط المتابعة: ${origin}/track/${encodeURIComponent(booking.booking_code || "")}`,
+    "يرجى متابعة رقم الدور قبل التوجه إلى العيادة."
+  ].join("\n");
+
+  return `<a class="tiny-btn whatsapp" href="${whatsAppLink(booking.patient_phone, message)}" target="_blank" rel="noopener">إرسال واتساب</a>`;
+}
+
 export function confirmationCard(booking, origin = window.location.origin) {
   const session = booking.queue_session || {};
   return `
@@ -317,10 +332,13 @@ export function dashboardStats(items) {
   `;
 }
 
-export function bookingTable(bookings, showActions = true) {
+export function bookingTable(bookings, showActions = true, options = {}) {
   if (!bookings.length) {
     return emptyState("لا توجد حجوزات لهذا اليوم", "عند وصول حجوزات جديدة ستظهر هنا مباشرة.");
   }
+
+  const whatsappEnabled = options.whatsappEnabled !== false;
+  const origin = options.origin || window.location.origin;
 
   return `
     <div class="table-wrap">
@@ -358,6 +376,7 @@ export function bookingTable(bookings, showActions = true) {
                             <button class="tiny-btn" data-booking-action="in_consultation" data-code="${escapeHtml(booking.booking_code)}">إدخال المريض</button>
                             <button class="tiny-btn" data-booking-action="completed" data-code="${escapeHtml(booking.booking_code)}">تم الانتهاء</button>
                             <button class="tiny-btn danger" data-booking-action="absent" data-code="${escapeHtml(booking.booking_code)}">غائب</button>
+                            ${whatsappEnabled ? bookingWhatsAppButton(booking, origin) : ""}
                           </div>
                         </td>`
                       : ""
