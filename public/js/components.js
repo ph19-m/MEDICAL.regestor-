@@ -208,6 +208,16 @@ export function formatIraqiWhatsAppPhone(phone) {
   return "";
 }
 
+export const PLATFORM_OWNER_WHATSAPP = "07767088664";
+
+export function whatsAppLink(phone, message) {
+  const normalizedPhone = formatIraqiWhatsAppPhone(phone);
+  const encodedMessage = encodeURIComponent(message);
+  return normalizedPhone
+    ? `https://wa.me/${normalizedPhone}?text=${encodedMessage}`
+    : `https://wa.me/?text=${encodedMessage}`;
+}
+
 export function whatsAppShareButton(booking, origin = window.location.origin) {
   const trackingLink = `${origin}/track/${encodeURIComponent(booking.booking_code)}`;
   const message = [
@@ -219,12 +229,44 @@ export function whatsAppShareButton(booking, origin = window.location.origin) {
     `رقم الدور: ${booking.queue_number}`,
     `رابط المتابعة: ${trackingLink}`
   ].join("\n");
-  const phone = formatIraqiWhatsAppPhone(booking.patient_phone);
-  const href = phone
-    ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
-    : `https://wa.me/?text=${encodeURIComponent(message)}`;
+  const href = whatsAppLink(booking.patient_phone, message);
 
   return `<a class="btn whatsapp large" href="${href}" target="_blank" rel="noopener">مشاركة عبر واتساب</a>`;
+}
+
+export function clinicRegistrationOwnerWhatsAppButton(clinic, origin = window.location.origin) {
+  const message = [
+    "طلب تسجيل عيادة جديد في دوري الطبي",
+    `العيادة: ${clinic.name || ""}`,
+    `المسؤول: ${clinic.owner_name || "-"}`,
+    `واتساب المسؤول: ${clinic.owner_phone || clinic.phone || ""}`,
+    `المحافظة/المنطقة: ${clinic.governorate || ""} / ${clinic.area || ""}`,
+    `العنوان: ${clinic.address || ""}`,
+    `الرابط بعد الموافقة: ${origin}/clinics/${encodeURIComponent(clinic.slug || clinic.id || "")}`,
+    "يرجى مراجعة لوحة المالك والموافقة قبل إرسال كود الدخول."
+  ].join("\n");
+
+  return `<a class="btn whatsapp large" href="${whatsAppLink(PLATFORM_OWNER_WHATSAPP, message)}" target="_blank" rel="noopener">إرسال الطلب للمالك عبر واتساب</a>`;
+}
+
+export function clinicAccessCodeWhatsAppButton(clinic, origin = window.location.origin) {
+  const phone = clinic.owner_phone || clinic.phone || "";
+  if (!formatIraqiWhatsAppPhone(phone)) {
+    return `<span class="tiny-note">لا يوجد رقم واتساب صالح</span>`;
+  }
+
+  const dashboardLink = `${origin}/login`;
+  const clinicLink = `${origin}/clinics/${encodeURIComponent(clinic.slug || clinic.id || "")}`;
+  const message = [
+    "أهلاً بيكم في دوري الطبي",
+    `تمت الموافقة على عيادتكم: ${clinic.name || ""}`,
+    `رابط دخول لوحة العيادة: ${dashboardLink}`,
+    `كود الدخول الخاص بالعيادة: ${clinic.access_code || ""}`,
+    `رابط صفحة العيادة للمرضى: ${clinicLink}`,
+    "يرجى عدم مشاركة الكود إلا مع السكرتير أو إدارة العيادة."
+  ].join("\n");
+
+  return `<a class="tiny-btn whatsapp" href="${whatsAppLink(phone, message)}" target="_blank" rel="noopener">إرسال الكود واتساب</a>`;
 }
 
 export function confirmationCard(booking, origin = window.location.origin) {

@@ -124,6 +124,8 @@ The MVP now supports the first multi-tenant workflow:
 - Each active clinic gets a public patient page at `/clinics/{slug}`.
 - Clinic access codes scope dashboard data to one clinic: doctors, schedules, bookings, queue sessions, and notifications.
 - Clinic staff can add doctors only to their own clinic; the server ignores any forged `clinic_id`.
+- Clinic registration confirmation includes a WhatsApp handoff to the platform owner number `07767088664`.
+- The clinic access code is not delivered automatically to applicants. The platform owner approves the clinic, then sends the code manually from `/admin/clinics` through the prepared WhatsApp message.
 
 This is still access-code based for MVP speed. The next production step is replacing access codes with real user accounts, password reset, and session tokens.
 

@@ -1,7 +1,9 @@
-import { api } from "./api.js?v=6";
+import { api } from "./api.js?v=7";
 import {
   bookingCard,
   bookingTable,
+  clinicAccessCodeWhatsAppButton,
+  clinicRegistrationOwnerWhatsAppButton,
   confirmationCard,
   dashboardStats,
   doctorCard,
@@ -13,7 +15,7 @@ import {
   queueStatusCard,
   statusBadge,
   whatsAppShareButton
-} from "./components.js?v=6";
+} from "./components.js?v=7";
 
 const app = document.querySelector("#app");
 
@@ -714,7 +716,7 @@ function clinicRegisterPage() {
         </form>
         <div class="notice">
           <strong>ماذا يحدث بعد التسجيل؟</strong>
-          <p>يبقى الطلب بانتظار الموافقة. بعد التفعيل تحصل العيادة على رابط خاص وكود دخول للداشبورد.</p>
+          <p>يبقى الطلب بانتظار موافقة مالك المنصة. كود الدخول لا يظهر تلقائياً، ويصل لمسؤول العيادة عبر واتساب من المالك فقط بعد التفعيل.</p>
         </div>
       </section>
     `,
@@ -723,7 +725,13 @@ function clinicRegisterPage() {
   document.querySelector("#clinic-register-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const clinic = await api.createClinicRegistration(Object.fromEntries(new FormData(event.currentTarget)));
+      const formPayload = Object.fromEntries(new FormData(event.currentTarget));
+      const clinic = await api.createClinicRegistration(formPayload);
+      const clinicForOwnerMessage = {
+        ...clinic,
+        ...formPayload,
+        name: clinic.name || formPayload.clinic_name
+      };
       toast("تم استلام طلب العيادة وهو الآن بانتظار موافقة مالك المنصة.", "success");
       event.currentTarget.reset();
       render(
@@ -734,7 +742,7 @@ function clinicRegisterPage() {
                 <span class="success-ring">✓</span>
                 <span class="eyebrow">تم إرسال طلب التسجيل</span>
                 <h1>${escapeHtml(clinic.name)}</h1>
-                <p>الطلب الآن بانتظار الموافقة. بعد التفعيل سيظهر رابط العيادة العام ويمكن إضافة الأطباء والجداول من لوحة العيادة.</p>
+                <p>الطلب الآن بانتظار موافقة مالك المنصة. بعد التفعيل يتم إرسال كود الدخول عبر واتساب، ولا يتم تسليم الكود تلقائياً من الموقع.</p>
               </div>
               <dl class="confirmation-details">
                 <div><dt>حالة الطلب</dt><dd>بانتظار الموافقة</dd></div>
@@ -743,6 +751,7 @@ function clinicRegisterPage() {
                 <div><dt>الرابط بعد التفعيل</dt><dd dir="ltr">/clinics/${escapeHtml(clinic.slug)}</dd></div>
               </dl>
               <div class="button-row confirmation-actions">
+                ${clinicRegistrationOwnerWhatsAppButton(clinicForOwnerMessage, window.location.origin)}
                 <a class="btn primary large" href="/" data-link>العودة للرئيسية</a>
                 <a class="btn secondary large" href="/login" data-link>دخول الإدارة</a>
               </div>
@@ -1314,7 +1323,7 @@ function adminClinicsPage() {
         <div>
           <span class="eyebrow">إدارة العيادات</span>
           <h1>الموافقات وحالة العيادات</h1>
-          <p class="muted">طلبات بانتظار المراجعة: ${escapeHtml(pendingCount)}</p>
+          <p class="muted">طلبات بانتظار المراجعة: ${escapeHtml(pendingCount)}. كود العيادة يرسله المالك فقط عبر واتساب بعد الموافقة.</p>
         </div>
       </div>
       <section class="panel">
@@ -1336,11 +1345,19 @@ function adminClinicsPage() {
                       </td>
                       <td>${escapeHtml(clinic.governorate)} / ${escapeHtml(clinic.area)}</td>
                       <td><a href="/clinics/${encodeURIComponent(clinic.slug || clinic.id)}" data-link dir="ltr">/clinics/${escapeHtml(clinic.slug || clinic.id)}</a></td>
-                      <td><code>${escapeHtml(clinic.access_code || "-")}</code></td>
-                      <td>${statusBadge(clinic.status)}</td>
+                      <td>
+                        <code>${escapeHtml(clinic.access_code || "-")}</code>
+                        <small>خاص بمالك المنصة فقط</small>
+                      </td>
+                      <td>
+                        ${statusBadge(clinic.status)}
+                        <small>الخطة: ${escapeHtml(clinic.plan || "trial")}</small>
+                        <small>نهاية التجربة: ${escapeHtml(clinic.trial_ends_at ? clinic.trial_ends_at.slice(0, 10) : "-")}</small>
+                      </td>
                       <td>
                         <button class="tiny-btn" data-clinic-status="${escapeHtml(clinic.id)}" data-status="active">موافقة</button>
                         <button class="tiny-btn danger" data-clinic-status="${escapeHtml(clinic.id)}" data-status="inactive">تعطيل</button>
+                        ${clinic.status === "active" && clinic.access_code ? clinicAccessCodeWhatsAppButton(clinic, window.location.origin) : ""}
                       </td>
                     </tr>
                   `

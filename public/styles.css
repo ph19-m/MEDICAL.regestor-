@@ -392,13 +392,15 @@ textarea:focus {
   color: var(--red);
 }
 
-.btn.whatsapp {
+.btn.whatsapp,
+.tiny-btn.whatsapp {
   border-color: #bcefd7;
   background: #18a96d;
   color: #fff;
 }
 
-.btn.whatsapp:hover {
+.btn.whatsapp:hover,
+.tiny-btn.whatsapp:hover {
   background: #128a59;
 }
 
@@ -1231,6 +1233,15 @@ table small {
   background: #fff;
   color: var(--primary-strong);
   font-weight: 800;
+}
+
+.tiny-note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .table-input {
