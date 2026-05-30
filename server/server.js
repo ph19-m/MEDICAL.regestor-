@@ -88,6 +88,17 @@ function sendError(response, statusCode, message, details = {}) {
   });
 }
 
+function appBaseUrl(request) {
+  const configured =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+  if (configured) return configured.replace(/\/$/, "");
+  const host = request?.headers?.host || `localhost:${PORT}`;
+  const protocol = host.includes("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
+  return `${protocol}://${host}`;
+}
+
 function getPublicBootstrapCache(method, url, auth) {
   if (method !== "GET" || url.pathname !== "/api/bootstrap" || auth.accessCode || auth.bearerToken) return null;
   if (!publicBootstrapCache || publicBootstrapCache.expiresAt <= Date.now()) return null;
@@ -202,6 +213,51 @@ async function loginWithSupabase(email, password) {
   return { session: payload };
 }
 
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || ""));
+}
+
+async function createSupabaseAuthUser({ email, password, name, phone, role, clinicId }) {
+  const config = supabaseAuthConfig();
+  if (!config.url || !config.serviceRoleKey || typeof fetch !== "function") {
+    if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+      return { error: "إنشاء حسابات العيادات يحتاج SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY في Vercel." };
+    }
+    return { skipped: true };
+  }
+
+  const response = await fetch(`${config.url.replace(/\/$/, "")}/auth/v1/admin/users`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.serviceRoleKey}`,
+      apikey: config.serviceRoleKey
+    },
+    body: JSON.stringify({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        name,
+        phone,
+        role,
+        clinic_id: clinicId
+      },
+      app_metadata: {
+        role,
+        clinic_id: clinicId
+      }
+    })
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    return { error: payload.message || payload.msg || payload.error_description || "تعذر إنشاء مستخدم Supabase Auth." };
+  }
+
+  return { user: payload };
+}
+
 function userRoleFromAuth(authUser, dbUser) {
   return (
     dbUser?.role ||
@@ -232,13 +288,16 @@ async function resolveRequestAuth(db, request) {
           (authUser.email && user.email && user.email.toLowerCase() === authUser.email.toLowerCase())
       );
       const resolvedRole = userRoleFromAuth(authUser, dbUser);
+      const userStatus = dbUser?.status || "active";
       auth.role = resolvedRole;
       auth.userId = dbUser?.id || "";
       auth.authUserId = authUser.id;
       auth.clinicId = clinicIdFromAuth(authUser, dbUser);
       auth.isSuperAdmin = resolvedRole === "super_admin";
       auth.isGlobalStaff = false;
-      auth.isStaff = ["super_admin", "clinic_admin", "secretary", "doctor"].includes(resolvedRole);
+      auth.isStaff =
+        ["super_admin", "clinic_admin", "secretary", "doctor"].includes(resolvedRole) &&
+        (auth.isSuperAdmin || userStatus === "active");
       auth.authProvider = "supabase";
       return auth;
     }
@@ -285,7 +344,7 @@ function canAccessDoctor(db, auth, doctorId) {
   return Boolean(doctor && canAccessClinic(auth, doctor.clinic_id));
 }
 
-function publicBootstrap(db) {
+function publicBootstrap(db, request) {
   return {
     clinics: db.clinics.filter((clinic) => clinic.status === "active").map(publicClinic),
     doctors: db.doctors.map((doctor) => publicDoctor(db, doctor)).filter((doctor) => doctor.clinic?.status === "active"),
@@ -297,6 +356,7 @@ function publicBootstrap(db) {
     specialties: db.specialties,
     governorates: db.governorates,
     stats: stats(db),
+    app_url: appBaseUrl(request),
     today: todayISO()
   };
 }
@@ -324,13 +384,14 @@ function scopedDbForAuth(db, auth) {
   };
 }
 
-function fullBootstrap(db, auth = {}) {
+function fullBootstrap(db, auth = {}, request) {
   const scoped = scopedDbForAuth(db, auth);
   return {
     users: auth.isSuperAdmin ? db.users.map(sanitizeUser) : [],
     clinics: scoped.clinics.map((clinic) => ({
       ...publicClinic(clinic),
       access_code: auth.isSuperAdmin ? clinic.access_code : undefined,
+      admin_email: auth.isSuperAdmin ? clinic.admin_email : undefined,
       owner_name: clinic.owner_name,
       owner_phone: clinic.owner_phone,
       clinic_type: clinic.clinic_type,
@@ -345,6 +406,7 @@ function fullBootstrap(db, auth = {}) {
     specialties: db.specialties,
     governorates: db.governorates,
     stats: stats(scoped),
+    app_url: appBaseUrl(request),
     today: todayISO()
   };
 }
@@ -596,6 +658,7 @@ function publicClinic(clinic) {
   const slug = clinic.slug || clinic.id;
   const {
     access_code: _accessCode,
+    admin_email: _adminEmail,
     internal_notes: _internalNotes,
     owner_name: _ownerName,
     owner_phone: _ownerPhone,
@@ -1110,7 +1173,7 @@ function updateClinicSettings(db, clinicId, payload) {
   return { clinic };
 }
 
-function createClinicRegistration(db, payload) {
+async function createClinicRegistration(db, payload) {
   const name = String(payload.clinic_name || payload.name || "").trim();
   const phone = String(payload.phone || "").trim();
   const governorate = String(payload.governorate || "").trim();
@@ -1118,6 +1181,8 @@ function createClinicRegistration(db, payload) {
   const address = String(payload.address || "").trim();
   const ownerName = String(payload.owner_name || payload.ownerName || "").trim();
   const ownerPhone = String(payload.owner_phone || payload.ownerPhone || phone).trim();
+  const adminEmail = String(payload.admin_email || payload.adminEmail || "").trim().toLowerCase();
+  const adminPassword = String(payload.admin_password || payload.adminPassword || "");
   const clinicType = String(payload.clinic_type || payload.clinicType || "عيادة خاصة").trim();
   const now = new Date();
 
@@ -1127,14 +1192,29 @@ function createClinicRegistration(db, payload) {
   if (!area) return { error: "المنطقة مطلوبة." };
   if (!address) return { error: "عنوان العيادة مطلوب." };
   if (ownerPhone && !validatePhone(ownerPhone)) return { error: "رقم مسؤول العيادة يجب أن يبدأ بـ 07 ويتكون من 11 رقم." };
+  if (!isValidEmail(adminEmail)) return { error: "البريد الإلكتروني لمدير العيادة مطلوب وبصيغة صحيحة." };
+  if (adminPassword.length < 6) return { error: "كلمة مرور مدير العيادة يجب أن تكون 6 أحرف على الأقل." };
 
+  db.users = Array.isArray(db.users) ? db.users : [];
   const duplicate = db.clinics.find((clinic) => clinic.phone === phone || (ownerPhone && clinic.owner_phone === ownerPhone));
   if (duplicate && duplicate.status !== "inactive") {
     return { error: "يوجد طلب أو عيادة مسجلة بهذا الرقم." };
   }
+  const duplicateUser = db.users.find((user) => user.email && user.email.toLowerCase() === adminEmail);
+  if (duplicateUser) return { error: "يوجد حساب مسجل بهذا البريد الإلكتروني." };
 
   const id = makeId("clinic");
   const baseSlug = slugify(`${name}-${area}`, id);
+  const authUser = await createSupabaseAuthUser({
+    email: adminEmail,
+    password: adminPassword,
+    name: ownerName || name,
+    phone: ownerPhone || phone,
+    role: "clinic_admin",
+    clinicId: id
+  });
+  if (authUser.error) return { error: authUser.error };
+
   const clinic = {
     id,
     slug: uniqueSlug(db.clinics, baseSlug),
@@ -1145,6 +1225,7 @@ function createClinicRegistration(db, payload) {
     phone,
     owner_name: ownerName,
     owner_phone: ownerPhone,
+    admin_email: adminEmail,
     clinic_type: clinicType,
     status: "pending",
     registration_status: "pending",
@@ -1158,6 +1239,19 @@ function createClinicRegistration(db, payload) {
     created_at: now.toISOString(),
     approved_at: null,
     internal_notes: String(payload.notes || "").trim()
+  };
+  const user = {
+    id: makeId("user"),
+    clinic_id: id,
+    auth_user_id: authUser.user?.id || "",
+    name: ownerName || name,
+    phone: ownerPhone || phone,
+    email: adminEmail,
+    password_hash: authUser.user?.id ? "supabase-auth-managed" : "pending-supabase-auth",
+    role: "clinic_admin",
+    status: "pending",
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
   };
   const subscription = {
     id: makeId("subscription"),
@@ -1174,9 +1268,10 @@ function createClinicRegistration(db, payload) {
   };
 
   db.clinics.push(clinic);
+  db.users.push(user);
   db.subscriptions = Array.isArray(db.subscriptions) ? db.subscriptions : [];
   db.subscriptions.push(subscription);
-  return { clinic, subscription };
+  return { clinic, user, subscription, auth_created: Boolean(authUser.user?.id) };
 }
 
 function ensureTenantFields(db) {
@@ -1268,7 +1363,7 @@ async function handleApi(request, response, url) {
     if (cachedPublicBootstrap) {
       return sendJson(response, 200, {
         ok: true,
-        data: cachedPublicBootstrap
+        data: { ...cachedPublicBootstrap, app_url: appBaseUrl(request) }
       });
     }
 
@@ -1329,7 +1424,7 @@ async function handleApi(request, response, url) {
     }
 
     if (method === "GET" && url.pathname === "/api/bootstrap") {
-      const data = auth.isStaff ? fullBootstrap(db, auth) : publicBootstrap(db);
+      const data = auth.isStaff ? fullBootstrap(db, auth, request) : publicBootstrap(db, request);
       if (!auth.isStaff && !auth.accessCode) setPublicBootstrapCache(data);
       return sendJson(response, 200, {
         ok: true,
@@ -1387,12 +1482,12 @@ async function handleApi(request, response, url) {
 
     if (method === "POST" && url.pathname === "/api/clinic-registrations") {
       const payload = await parseBody(request);
-      const result = createClinicRegistration(db, payload);
+      const result = await createClinicRegistration(db, payload);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db, ["clinics", "subscriptions"]);
+      await persistDb(db, ["clinics", "users", "subscriptions"]);
       return sendJson(response, 201, {
         ok: true,
-        data: publicClinic(result.clinic)
+        data: { ...publicClinic(result.clinic), auth_created: result.auth_created }
       });
     }
 
@@ -1538,9 +1633,21 @@ async function handleApi(request, response, url) {
         clinic.registration_status = "approved";
         clinic.approved_at = clinic.approved_at || new Date().toISOString();
         clinic.subscription_status = clinic.subscription_status === "pending" ? "trial" : clinic.subscription_status;
+        db.users
+          .filter((user) => user.clinic_id === clinic.id)
+          .forEach((user) => {
+            user.status = "active";
+            user.updated_at = new Date().toISOString();
+          });
       }
       if (payload.status === "inactive") {
         clinic.registration_status = clinic.registration_status === "pending" ? "rejected" : "inactive";
+        db.users
+          .filter((user) => user.clinic_id === clinic.id)
+          .forEach((user) => {
+            user.status = "suspended";
+            user.updated_at = new Date().toISOString();
+          });
       }
       const subscription = (db.subscriptions || []).find((item) => item.clinic_id === clinic.id);
       if (subscription) {
@@ -1550,7 +1657,7 @@ async function handleApi(request, response, url) {
         subscription.current_period_end = subscription.current_period_end || clinic.trial_ends_at || null;
         subscription.updated_at = new Date().toISOString();
       }
-      await persistDb(db, ["clinics", "subscriptions"]);
+      await persistDb(db, ["clinics", "users", "subscriptions"]);
       return sendJson(response, 200, { ok: true, data: clinic });
     }
 

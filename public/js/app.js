@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=9";
+import { api } from "./api.js?v=10";
 import {
   bookingCard,
   bookingTable,
@@ -15,7 +15,7 @@ import {
   queueStatusCard,
   statusBadge,
   whatsAppShareButton
-} from "./components.js?v=9";
+} from "./components.js?v=10";
 
 const app = document.querySelector("#app");
 
@@ -28,6 +28,19 @@ const state = {
   dashboardDoctorId: localStorage.getItem("dawri-dashboard-doctor") || "",
   dashboardDate: ""
 };
+
+function appOrigin() {
+  const configured = state.data?.app_url || "";
+  return String(configured || window.location.origin).replace(/\/$/, "");
+}
+
+function setFormSubmitting(form, submitting, loadingText = "جاري المعالجة...") {
+  const button = form?.querySelector("button[type='submit']");
+  if (!button) return;
+  if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+  button.disabled = submitting;
+  button.textContent = submitting ? loadingText : button.dataset.originalText;
+}
 
 const roleLabels = {
   patient: "مريض",
@@ -577,7 +590,7 @@ async function confirmationPage(code) {
   render(
     `
       <section class="section confirmation">
-        ${confirmationCard(booking, window.location.origin)}
+        ${confirmationCard(booking, appOrigin())}
       </section>
     `,
     "تم تأكيد الحجز"
@@ -675,7 +688,7 @@ async function renderTrackResult(code, silent = false) {
         ${queueStatusCard(booking)}
         <div class="button-row">
           <button class="btn danger" id="cancel-booking" ${["arrived", "in_consultation", "completed", "cancelled"].includes(booking.status) ? "disabled" : ""}>إلغاء الحجز</button>
-          ${whatsAppShareButton(booking, window.location.origin)}
+          ${whatsAppShareButton(booking, appOrigin())}
           <a class="btn secondary" href="/doctors/${encodeURIComponent(booking.doctor_id)}" data-link>صفحة الطبيب</a>
         </div>
       </article>
@@ -708,6 +721,8 @@ function clinicRegisterPage() {
           <label><span>رقم الهاتف</span><input required name="phone" dir="ltr" inputmode="tel" placeholder="07xxxxxxxxx" /></label>
           <label><span>اسم المسؤول</span><input name="owner_name" placeholder="اسم صاحب العيادة أو المدير" /></label>
           <label><span>واتساب المسؤول</span><input name="owner_phone" dir="ltr" inputmode="tel" placeholder="07xxxxxxxxx" /></label>
+          <label><span>بريد مدير العيادة</span><input required name="admin_email" type="email" autocomplete="email" placeholder="admin@clinic.com" /></label>
+          <label><span>كلمة مرور المدير</span><input required name="admin_password" type="password" autocomplete="new-password" minlength="6" placeholder="6 أحرف على الأقل" /></label>
           <label><span>نوع العيادة</span><select name="clinic_type"><option>عيادة خاصة</option><option>مجمع طبي</option><option>مركز تخصصي</option><option>مختبر أو أشعة</option></select></label>
           <label><span>المحافظة</span><select name="governorate">${optionList(state.data.governorates, "", "اختر المحافظة")}</select></label>
           <label><span>المنطقة</span><input name="area" placeholder="المنطقة" /></label>
@@ -725,8 +740,10 @@ function clinicRegisterPage() {
   );
   document.querySelector("#clinic-register-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
+    setFormSubmitting(form, true, "جاري إرسال الطلب...");
     try {
-      const formPayload = Object.fromEntries(new FormData(event.currentTarget));
+      const formPayload = Object.fromEntries(new FormData(form));
       const clinic = await api.createClinicRegistration(formPayload);
       const clinicForOwnerMessage = {
         ...clinic,
@@ -734,7 +751,7 @@ function clinicRegisterPage() {
         name: clinic.name || formPayload.clinic_name
       };
       toast("تم استلام طلب العيادة وهو الآن بانتظار موافقة مالك المنصة.", "success");
-      event.currentTarget.reset();
+      form.reset();
       render(
         `
           <section class="section confirmation">
@@ -752,7 +769,7 @@ function clinicRegisterPage() {
                 <div><dt>الرابط بعد التفعيل</dt><dd dir="ltr">/clinics/${escapeHtml(clinic.slug)}</dd></div>
               </dl>
               <div class="button-row confirmation-actions">
-                ${clinicRegistrationOwnerWhatsAppButton(clinicForOwnerMessage, window.location.origin)}
+                ${clinicRegistrationOwnerWhatsAppButton(clinicForOwnerMessage, appOrigin())}
                 <a class="btn primary large" href="/" data-link>العودة للرئيسية</a>
                 <a class="btn secondary large" href="/login" data-link>دخول الإدارة</a>
               </div>
@@ -763,6 +780,8 @@ function clinicRegisterPage() {
       );
     } catch (error) {
       toast(error.message, "error");
+    } finally {
+      setFormSubmitting(form, false);
     }
   });
 }
@@ -853,6 +872,7 @@ function loginPage() {
     const form = event.currentTarget;
     const email = form.email.value.trim();
     const password = form.password.value;
+    setFormSubmitting(form, true, "جاري تسجيل الدخول...");
     try {
       const session = await api.authLogin({ email, password });
       state.role = session.role || "patient";
@@ -865,6 +885,8 @@ function loginPage() {
       navigate(state.role === "super_admin" ? "/admin" : state.role === "patient" ? "/" : "/dashboard");
     } catch (error) {
       toast(error.message || "تعذر تسجيل الدخول بالحساب.", "error");
+    } finally {
+      setFormSubmitting(form, false);
     }
   });
 
@@ -873,6 +895,7 @@ function loginPage() {
     const form = event.currentTarget;
     const role = form.role.value;
     const accessCode = form.accessCode.value.trim();
+    setFormSubmitting(form, true, "جاري التحقق...");
     try {
       await api.authCheck(role, accessCode);
       state.role = role;
@@ -885,12 +908,16 @@ function loginPage() {
       navigate("/dashboard");
     } catch (error) {
       toast(error.message || "كود الدخول غير صحيح.", "error");
+    } finally {
+      setFormSubmitting(form, false);
     }
   });
 
   document.querySelector("#owner-login-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const accessCode = event.currentTarget.accessCode.value.trim();
+    const form = event.currentTarget;
+    const accessCode = form.accessCode.value.trim();
+    setFormSubmitting(form, true, "جاري التحقق...");
     try {
       await api.authCheck("super_admin", accessCode);
       state.role = "super_admin";
@@ -903,6 +930,8 @@ function loginPage() {
       navigate("/admin");
     } catch (error) {
       toast(error.message || "كود مالك المنصة غير صحيح.", "error");
+    } finally {
+      setFormSubmitting(form, false);
     }
   });
 
@@ -1015,7 +1044,7 @@ async function dashboardTodayPage(activePath = "/dashboard") {
         </div>
         ${bookingTable(data.bookings, true, {
           whatsappEnabled: data.clinic_settings?.whatsapp_booking_enabled !== false,
-          origin: window.location.origin
+          origin: appOrigin()
         })}
       </section>
     `,
@@ -1444,7 +1473,7 @@ function adminClinicsPage() {
                       <td>
                         <button class="tiny-btn" data-clinic-status="${escapeHtml(clinic.id)}" data-status="active">موافقة</button>
                         <button class="tiny-btn danger" data-clinic-status="${escapeHtml(clinic.id)}" data-status="inactive">تعطيل</button>
-                        ${clinic.status === "active" && clinic.access_code ? clinicAccessCodeWhatsAppButton(clinic, window.location.origin) : ""}
+                        ${clinic.status === "active" && clinic.access_code ? clinicAccessCodeWhatsAppButton(clinic, appOrigin()) : ""}
                       </td>
                     </tr>
                   `

@@ -16,8 +16,8 @@ const ALLOW_JSON_FALLBACK =
   (!process.env.VERCEL && process.env.NODE_ENV !== "production");
 
 const APP_COLLECTIONS = [
-  "users",
   "clinics",
+  "users",
   "doctors",
   "schedules",
   "bookings",
@@ -58,6 +58,7 @@ const COLLECTIONS = {
       access_code: "TEXT",
       owner_name: "TEXT",
       owner_phone: "TEXT",
+      admin_email: "TEXT",
       clinic_type: "TEXT",
       plan: "TEXT",
       subscription_status: "TEXT",
@@ -339,6 +340,7 @@ async function ensurePostgresSchema(client = getPool()) {
   await client.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS clinics_slug_idx ON clinics (slug);
     CREATE INDEX IF NOT EXISTS users_clinic_idx ON users (clinic_id);
+    CREATE INDEX IF NOT EXISTS users_email_idx ON users (LOWER(email)) WHERE email IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS users_auth_user_idx ON users (auth_user_id) WHERE auth_user_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS doctors_clinic_idx ON doctors (clinic_id);
     CREATE INDEX IF NOT EXISTS schedules_doctor_idx ON schedules (doctor_id);
@@ -353,6 +355,52 @@ async function ensurePostgresSchema(client = getPool()) {
     CREATE INDEX IF NOT EXISTS queue_sessions_doctor_date_idx ON queue_sessions (doctor_id, date);
     CREATE INDEX IF NOT EXISTS notifications_clinic_idx ON notifications (clinic_id);
     CREATE INDEX IF NOT EXISTS subscriptions_clinic_idx ON subscriptions (clinic_id);
+  `);
+
+  await client.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_clinic_fk') THEN
+        ALTER TABLE users
+          ADD CONSTRAINT users_clinic_fk FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE SET NULL;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'doctors_clinic_fk') THEN
+        ALTER TABLE doctors
+          ADD CONSTRAINT doctors_clinic_fk FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE CASCADE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'schedules_doctor_fk') THEN
+        ALTER TABLE schedules
+          ADD CONSTRAINT schedules_doctor_fk FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bookings_clinic_fk') THEN
+        ALTER TABLE bookings
+          ADD CONSTRAINT bookings_clinic_fk FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE CASCADE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bookings_doctor_fk') THEN
+        ALTER TABLE bookings
+          ADD CONSTRAINT bookings_doctor_fk FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'queue_sessions_clinic_fk') THEN
+        ALTER TABLE queue_sessions
+          ADD CONSTRAINT queue_sessions_clinic_fk FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE CASCADE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'queue_sessions_doctor_fk') THEN
+        ALTER TABLE queue_sessions
+          ADD CONSTRAINT queue_sessions_doctor_fk FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'subscriptions_clinic_fk') THEN
+        ALTER TABLE subscriptions
+          ADD CONSTRAINT subscriptions_clinic_fk FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE CASCADE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notifications_booking_fk') THEN
+        ALTER TABLE notifications
+          ADD CONSTRAINT notifications_booking_fk FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notifications_clinic_fk') THEN
+        ALTER TABLE notifications
+          ADD CONSTRAINT notifications_clinic_fk FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE CASCADE;
+      END IF;
+    END $$;
   `);
 
   await backfillRelationalColumns(client);
@@ -470,6 +518,19 @@ async function insertRecord(client, collection, record, data) {
   );
 }
 
+async function deleteMissingRecords(client, collection, records) {
+  const ids = records.filter((record) => record?.id).map((record) => String(record.id));
+  if (!ids.length) {
+    await client.query(`DELETE FROM ${tableName(COLLECTIONS[collection])}`);
+    return;
+  }
+
+  await client.query(
+    `DELETE FROM ${tableName(COLLECTIONS[collection])} WHERE NOT (id = ANY($1::text[]))`,
+    [ids]
+  );
+}
+
 async function writePostgresDb(data, options = {}) {
   if (!options.skipEnsure) {
     await ensurePostgresDb();
@@ -484,8 +545,15 @@ async function writePostgresDb(data, options = {}) {
     await client.query("BEGIN");
     await ensurePostgresSchema(client);
 
-    for (const collection of [...collections].reverse()) {
-      await client.query(`DELETE FROM ${tableName(COLLECTIONS[collection])}`);
+    if (!options.collections) {
+      for (const collection of [...collections].reverse()) {
+        await client.query(`DELETE FROM ${tableName(COLLECTIONS[collection])}`);
+      }
+    } else {
+      for (const collection of collections) {
+        const records = Array.isArray(data[collection]) ? data[collection] : [];
+        await deleteMissingRecords(client, collection, records);
+      }
     }
 
     for (const collection of collections) {

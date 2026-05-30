@@ -96,9 +96,12 @@ Supabase setup:
 3. Add it to Vercel as an environment variable named `DATABASE_URL`.
 4. Copy Project URL and anon key from Project Settings > API.
 5. Add `SUPABASE_URL` and `SUPABASE_ANON_KEY` to Vercel.
-6. Optional but recommended for server-side verification: add `SUPABASE_SERVICE_ROLE_KEY`.
-7. Redeploy the Vercel project.
-8. On first request, the app creates/updates the relational schema and seeds Iraqi demo data if the database is empty.
+6. Add `SUPABASE_SERVICE_ROLE_KEY` so clinic registration can create the clinic admin account through Supabase Auth.
+7. Add `NEXT_PUBLIC_APP_URL` or `APP_URL` with the production Vercel domain so WhatsApp tracking links never point to localhost.
+8. Redeploy the Vercel project.
+9. On first request, the app creates/updates the relational schema and seeds Iraqi demo data if the database is empty.
+
+The full Supabase SQL schema is kept in `server/db/schema.sql`. You can run it manually in Supabase SQL Editor, but the server also applies the schema automatically when `DATABASE_URL` is configured.
 
 For local development with PostgreSQL, create a `.env` from `.env.example` or set `DATABASE_URL` in your shell before running:
 
@@ -140,8 +143,9 @@ Change both before using the demo with real clinics.
 
 The app supports the first multi-tenant SaaS workflow:
 
-- Clinics submit registration requests from `/clinic-register`.
-- New clinics are saved as `pending` with a generated `slug`, trial plan, and private clinic access code.
+- Clinics submit registration requests from `/clinic-register` with clinic information plus the clinic admin email and password.
+- New clinics are saved as `pending` with a generated `slug`, trial plan, private clinic access code, and a pending `clinic_admin` user linked to the clinic.
+- When `SUPABASE_SERVICE_ROLE_KEY` is configured, the registration flow also creates the admin in Supabase Auth automatically.
 - Super admin reviews requests in `/admin/clinics`, approves active clinics, or disables them.
 - Each active clinic gets a public patient page at `/clinics/{slug}`.
 - Clinic access codes scope dashboard data to one clinic: doctors, schedules, bookings, queue sessions, and notifications.

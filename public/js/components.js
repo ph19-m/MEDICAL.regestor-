@@ -222,6 +222,7 @@ export function whatsAppShareButton(booking, origin = window.location.origin) {
   const trackingLink = `${origin}/track/${encodeURIComponent(booking.booking_code)}`;
   const message = [
     "تم تأكيد حجزك في دوري الطبي",
+    `المريض: ${booking.patient_name || ""}`,
     `الطبيب: ${booking.doctor?.name || ""}`,
     `العيادة: ${booking.clinic?.name || ""}`,
     `التاريخ: ${booking.booking_date}`,
@@ -239,6 +240,7 @@ export function clinicRegistrationOwnerWhatsAppButton(clinic, origin = window.lo
     "طلب تسجيل عيادة جديد في دوري الطبي",
     `العيادة: ${clinic.name || ""}`,
     `المسؤول: ${clinic.owner_name || "-"}`,
+    `إيميل المدير: ${clinic.admin_email || "-"}`,
     `واتساب المسؤول: ${clinic.owner_phone || clinic.phone || ""}`,
     `المحافظة/المنطقة: ${clinic.governorate || ""} / ${clinic.area || ""}`,
     `العنوان: ${clinic.address || ""}`,
