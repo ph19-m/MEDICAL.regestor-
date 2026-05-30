@@ -53,6 +53,7 @@ const APP_TIME_ZONE = "Asia/Baghdad";
 const DEMO_STAFF_ACCESS_CODE = "clinic-2026";
 const DEMO_SUPER_ADMIN_ACCESS_CODE = "owner-2026";
 const PUBLIC_BOOTSTRAP_CACHE_MS = Number(process.env.PUBLIC_BOOTSTRAP_CACHE_MS || 20000);
+const SAAS_PLANS = new Set(["free", "basic", "pro", "trial"]);
 
 let publicBootstrapCache = null;
 
@@ -88,7 +89,7 @@ function sendError(response, statusCode, message, details = {}) {
 }
 
 function getPublicBootstrapCache(method, url, auth) {
-  if (method !== "GET" || url.pathname !== "/api/bootstrap" || auth.accessCode) return null;
+  if (method !== "GET" || url.pathname !== "/api/bootstrap" || auth.accessCode || auth.bearerToken) return null;
   if (!publicBootstrapCache || publicBootstrapCache.expiresAt <= Date.now()) return null;
   return publicBootstrapCache.data;
 }
@@ -127,16 +128,122 @@ function configuredSuperAdminCode() {
   return process.env.SUPER_ADMIN_ACCESS_CODE || DEMO_SUPER_ADMIN_ACCESS_CODE;
 }
 
+function allowGlobalStaffAccess() {
+  return process.env.ALLOW_GLOBAL_STAFF_ACCESS === "true";
+}
+
 function getRequestAuth(request) {
   const role = String(getHeader(request, "x-dawri-role") || "patient");
   const accessCode = String(getHeader(request, "x-dawri-access-code") || "").trim();
+  const authorization = String(getHeader(request, "authorization") || "").trim();
+  const bearerToken = authorization.toLowerCase().startsWith("bearer ")
+    ? authorization.slice(7).trim()
+    : "";
   const isSuperAdmin = Boolean(accessCode && accessCode === configuredSuperAdminCode());
-  const isGlobalStaff = Boolean(accessCode && accessCode === configuredStaffCode());
-  return { role, accessCode, isGlobalStaff, isStaff: isSuperAdmin || isGlobalStaff, isSuperAdmin, clinicId: "" };
+  const isGlobalStaff = Boolean(accessCode && accessCode === configuredStaffCode() && allowGlobalStaffAccess());
+  return {
+    role,
+    accessCode,
+    bearerToken,
+    isGlobalStaff,
+    isStaff: isSuperAdmin || isGlobalStaff,
+    isSuperAdmin,
+    clinicId: "",
+    userId: "",
+    authUserId: "",
+    authProvider: accessCode ? "access_code" : "public"
+  };
 }
 
-function resolveRequestAuth(db, request) {
+function supabaseAuthConfig() {
+  return {
+    url: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    anonKey: process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+  };
+}
+
+async function fetchSupabaseAuthUser(token) {
+  const config = supabaseAuthConfig();
+  const apiKey = config.serviceRoleKey || config.anonKey;
+  if (!token || !config.url || !apiKey || typeof fetch !== "function") return null;
+
+  const response = await fetch(`${config.url.replace(/\/$/, "")}/auth/v1/user`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: apiKey
+    }
+  });
+
+  if (!response.ok) return null;
+  return response.json();
+}
+
+async function loginWithSupabase(email, password) {
+  const config = supabaseAuthConfig();
+  if (!config.url || !config.anonKey) {
+    return { error: "Supabase Auth غير مفعّل. أضف SUPABASE_URL و SUPABASE_ANON_KEY في Vercel." };
+  }
+
+  const response = await fetch(`${config.url.replace(/\/$/, "")}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: config.anonKey
+    },
+    body: JSON.stringify({ email, password })
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    return { error: payload.error_description || payload.msg || "بيانات الدخول غير صحيحة." };
+  }
+
+  return { session: payload };
+}
+
+function userRoleFromAuth(authUser, dbUser) {
+  return (
+    dbUser?.role ||
+    authUser?.app_metadata?.role ||
+    authUser?.user_metadata?.role ||
+    "patient"
+  );
+}
+
+function clinicIdFromAuth(authUser, dbUser) {
+  return (
+    dbUser?.clinic_id ||
+    authUser?.app_metadata?.clinic_id ||
+    authUser?.user_metadata?.clinic_id ||
+    ""
+  );
+}
+
+async function resolveRequestAuth(db, request) {
   const auth = getRequestAuth(request);
+
+  if (auth.bearerToken) {
+    const authUser = await fetchSupabaseAuthUser(auth.bearerToken);
+    if (authUser?.id) {
+      const dbUser = db.users.find(
+        (user) =>
+          user.auth_user_id === authUser.id ||
+          (authUser.email && user.email && user.email.toLowerCase() === authUser.email.toLowerCase())
+      );
+      const resolvedRole = userRoleFromAuth(authUser, dbUser);
+      auth.role = resolvedRole;
+      auth.userId = dbUser?.id || "";
+      auth.authUserId = authUser.id;
+      auth.clinicId = clinicIdFromAuth(authUser, dbUser);
+      auth.isSuperAdmin = resolvedRole === "super_admin";
+      auth.isGlobalStaff = false;
+      auth.isStaff = ["super_admin", "clinic_admin", "secretary", "doctor"].includes(resolvedRole);
+      auth.authProvider = "supabase";
+      return auth;
+    }
+  }
+
   if (!auth.isStaff && auth.accessCode) {
     const clinic = db.clinics.find((item) => item.access_code && item.access_code === auth.accessCode);
     if (clinic && clinic.status === "active") {
@@ -186,6 +293,7 @@ function publicBootstrap(db) {
     bookings: [],
     queueSessions: db.queueSessions,
     notifications: [],
+    subscriptions: [],
     specialties: db.specialties,
     governorates: db.governorates,
     stats: stats(db),
@@ -211,7 +319,8 @@ function scopedDbForAuth(db, auth) {
     schedules: db.schedules.filter((schedule) => doctorIdSet.has(schedule.doctor_id)),
     bookings: db.bookings.filter((booking) => bookingIds.has(booking.id)),
     queueSessions: db.queueSessions.filter((session) => session.clinic_id === auth.clinicId || doctorIdSet.has(session.doctor_id)),
-    notifications: db.notifications.filter((notification) => bookingIds.has(notification.booking_id))
+    notifications: db.notifications.filter((notification) => bookingIds.has(notification.booking_id) || notification.clinic_id === auth.clinicId),
+    subscriptions: (db.subscriptions || []).filter((subscription) => subscription.clinic_id === auth.clinicId)
   };
 }
 
@@ -232,6 +341,7 @@ function fullBootstrap(db, auth = {}) {
     bookings: scoped.bookings.map((booking) => publicBooking(scoped, booking)),
     queueSessions: scoped.queueSessions,
     notifications: scoped.notifications,
+    subscriptions: scoped.subscriptions || [],
     specialties: db.specialties,
     governorates: db.governorates,
     stats: stats(scoped),
@@ -508,7 +618,7 @@ function publicClinic(clinic) {
 
 function clinicSaasSettings(clinic) {
   return {
-    plan: clinic?.plan || "trial",
+    plan: clinic?.plan || "free",
     subscription_status: clinic?.subscription_status || "trial",
     trial_ends_at: clinic?.trial_ends_at || "",
     whatsapp_booking_enabled: clinic?.whatsapp_booking_enabled !== false,
@@ -604,6 +714,9 @@ function stats(db) {
     today_bookings: todayBookings.length,
     active_clinics: db.clinics.filter((clinic) => clinic.status === "active").length,
     pending_clinic_approvals: db.clinics.filter((clinic) => clinic.status === "pending").length,
+    free_subscriptions: (db.subscriptions || []).filter((subscription) => subscription.plan === "free").length,
+    basic_subscriptions: (db.subscriptions || []).filter((subscription) => subscription.plan === "basic").length,
+    pro_subscriptions: (db.subscriptions || []).filter((subscription) => subscription.plan === "pro").length,
     revenue_placeholder: db.revenue?.placeholder_monthly_iqd || 0
   };
 }
@@ -1036,7 +1149,7 @@ function createClinicRegistration(db, payload) {
     status: "pending",
     registration_status: "pending",
     access_code: makeAccessCode("clinic"),
-    plan: "trial",
+    plan: "free",
     subscription_status: "trial",
     trial_ends_at: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString(),
     whatsapp_booking_enabled: true,
@@ -1046,13 +1159,29 @@ function createClinicRegistration(db, payload) {
     approved_at: null,
     internal_notes: String(payload.notes || "").trim()
   };
+  const subscription = {
+    id: makeId("subscription"),
+    clinic_id: id,
+    plan: "free",
+    status: "trial",
+    started_at: now.toISOString(),
+    current_period_end: clinic.trial_ends_at,
+    trial_ends_at: clinic.trial_ends_at,
+    seats: 1,
+    price_iqd: 0,
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
 
   db.clinics.push(clinic);
-  return { clinic };
+  db.subscriptions = Array.isArray(db.subscriptions) ? db.subscriptions : [];
+  db.subscriptions.push(subscription);
+  return { clinic, subscription };
 }
 
 function ensureTenantFields(db) {
   let changed = false;
+  db.subscriptions = Array.isArray(db.subscriptions) ? db.subscriptions : [];
   db.clinics.forEach((clinic) => {
     if (!clinic.slug) {
       clinic.slug = uniqueSlug(db.clinics.filter((item) => item.id !== clinic.id), slugify(`${clinic.name}-${clinic.area}`, clinic.id));
@@ -1062,8 +1191,8 @@ function ensureTenantFields(db) {
       clinic.access_code = makeAccessCode("clinic");
       changed = true;
     }
-    if (!clinic.plan) {
-      clinic.plan = "trial";
+    if (!clinic.plan || !SAAS_PLANS.has(clinic.plan)) {
+      clinic.plan = clinic.plan === "trial" ? "free" : "free";
       changed = true;
     }
     if (!clinic.subscription_status) {
@@ -1085,6 +1214,29 @@ function ensureTenantFields(db) {
     if (!clinic.whatsapp_delivery_mode) {
       clinic.whatsapp_delivery_mode = "manual_handoff";
       changed = true;
+    }
+
+    let subscription = db.subscriptions.find((item) => item.clinic_id === clinic.id);
+    if (!subscription) {
+      subscription = {
+        id: makeId("subscription"),
+        clinic_id: clinic.id,
+        plan: clinic.plan || "free",
+        status: clinic.subscription_status || (clinic.status === "active" ? "trial" : "pending"),
+        started_at: clinic.created_at || new Date().toISOString(),
+        current_period_end: clinic.trial_ends_at || null,
+        trial_ends_at: clinic.trial_ends_at || null,
+        seats: clinic.status === "active" ? 3 : 1,
+        price_iqd: 0,
+        created_at: clinic.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      db.subscriptions.push(subscription);
+      changed = true;
+    } else {
+      if (!SAAS_PLANS.has(subscription.plan)) subscription.plan = clinic.plan || "free";
+      if (!subscription.status) subscription.status = clinic.subscription_status || "trial";
+      if (!subscription.updated_at) subscription.updated_at = new Date().toISOString();
     }
   });
   return changed;
@@ -1122,8 +1274,8 @@ async function handleApi(request, response, url) {
 
     const db = await readDb();
     const normalizedTenants = ensureTenantFields(db);
-    if (normalizedTenants) await persistDb(db, ["clinics"]);
-    const auth = resolveRequestAuth(db, request);
+    if (normalizedTenants) await persistDb(db, ["clinics", "subscriptions"]);
+    const auth = await resolveRequestAuth(db, request);
 
     if (method === "GET" && url.pathname === "/api/auth/check") {
       const requiredLevel = auth.role === "super_admin" ? "super_admin" : "staff";
@@ -1134,7 +1286,39 @@ async function handleApi(request, response, url) {
         ok: true,
         data: {
           role: auth.role,
+          clinic_id: auth.clinicId,
+          auth_provider: auth.authProvider,
           access: requiredLevel
+        }
+      });
+    }
+
+    if (method === "POST" && url.pathname === "/api/auth/login") {
+      const payload = await parseBody(request);
+      const email = String(payload.email || "").trim().toLowerCase();
+      const password = String(payload.password || "");
+      if (!email || !password) return sendError(response, 400, "أدخل البريد الإلكتروني وكلمة المرور.");
+
+      const result = await loginWithSupabase(email, password);
+      if (result.error) return sendError(response, 401, result.error);
+
+      const authUser = result.session.user;
+      const dbUser = db.users.find(
+        (user) =>
+          user.auth_user_id === authUser?.id ||
+          (authUser?.email && user.email && user.email.toLowerCase() === authUser.email.toLowerCase())
+      );
+      const role = userRoleFromAuth(authUser, dbUser);
+
+      return sendJson(response, 200, {
+        ok: true,
+        data: {
+          access_token: result.session.access_token,
+          refresh_token: result.session.refresh_token,
+          expires_in: result.session.expires_in,
+          role,
+          clinic_id: clinicIdFromAuth(authUser, dbUser),
+          user: dbUser ? sanitizeUser(dbUser) : { id: authUser.id, email: authUser.email, role }
         }
       });
     }
@@ -1205,7 +1389,7 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = createClinicRegistration(db, payload);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db, ["clinics"]);
+      await persistDb(db, ["clinics", "subscriptions"]);
       return sendJson(response, 201, {
         ok: true,
         data: publicClinic(result.clinic)
@@ -1346,17 +1530,27 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const clinic = findClinic(db, segments[2]);
       if (!clinic) return sendError(response, 404, "لم يتم العثور على العيادة.");
-      ["name", "governorate", "area", "address", "phone", "status"].forEach((field) => {
+      ["name", "governorate", "area", "address", "phone", "status", "plan", "subscription_status"].forEach((field) => {
         if (payload[field] !== undefined) clinic[field] = payload[field];
       });
+      if (!SAAS_PLANS.has(clinic.plan)) clinic.plan = "free";
       if (payload.status === "active") {
         clinic.registration_status = "approved";
         clinic.approved_at = clinic.approved_at || new Date().toISOString();
+        clinic.subscription_status = clinic.subscription_status === "pending" ? "trial" : clinic.subscription_status;
       }
       if (payload.status === "inactive") {
         clinic.registration_status = clinic.registration_status === "pending" ? "rejected" : "inactive";
       }
-      await persistDb(db, ["clinics"]);
+      const subscription = (db.subscriptions || []).find((item) => item.clinic_id === clinic.id);
+      if (subscription) {
+        subscription.plan = clinic.plan || subscription.plan || "free";
+        subscription.status = clinic.subscription_status || subscription.status || "trial";
+        subscription.trial_ends_at = clinic.trial_ends_at || subscription.trial_ends_at || null;
+        subscription.current_period_end = subscription.current_period_end || clinic.trial_ends_at || null;
+        subscription.updated_at = new Date().toISOString();
+      }
+      await persistDb(db, ["clinics", "subscriptions"]);
       return sendJson(response, 200, { ok: true, data: clinic });
     }
 

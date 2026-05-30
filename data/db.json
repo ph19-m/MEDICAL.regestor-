@@ -2,11 +2,12 @@
   "meta": {
     "app_name": "Dawri Medical / دوري الطبي",
     "seeded_at": "2026-05-26T22:24:57.908Z",
-    "schema_version": 1
+    "schema_version": 2
   },
   "users": [
     {
       "id": "user-patient-demo",
+      "clinic_id": "clinic-karada-smile",
       "name": "مريض تجريبي",
       "phone": "07700000001",
       "email": "patient@dawri.local",
@@ -16,6 +17,7 @@
     },
     {
       "id": "user-secretary-demo",
+      "clinic_id": "clinic-karada-smile",
       "name": "سكرتيرة العيادة",
       "phone": "07700000002",
       "email": "secretary@dawri.local",
@@ -25,6 +27,7 @@
     },
     {
       "id": "user-clinic-admin-demo",
+      "clinic_id": "clinic-karada-smile",
       "name": "مدير العيادة",
       "phone": "07700000003",
       "email": "clinic-admin@dawri.local",
@@ -34,6 +37,7 @@
     },
     {
       "id": "user-super-admin-demo",
+      "clinic_id": "",
       "name": "مالك المنصة",
       "phone": "07700000004",
       "email": "admin@dawri.local",
@@ -54,7 +58,7 @@
       "created_at": "2026-05-26T22:24:57.908Z",
       "slug": "clinic-karada-smile",
       "access_code": "clinic-karada-2026",
-      "plan": "trial",
+      "plan": "free",
       "subscription_status": "trial",
       "registration_status": "approved",
       "whatsapp_booking_enabled": true,
@@ -72,7 +76,7 @@
       "created_at": "2026-05-26T22:24:57.908Z",
       "slug": "clinic-mansour-care",
       "access_code": "clinic-mansour-2026",
-      "plan": "trial",
+      "plan": "free",
       "subscription_status": "trial",
       "registration_status": "approved",
       "whatsapp_booking_enabled": true,
@@ -90,7 +94,7 @@
       "created_at": "2026-05-26T22:24:57.908Z",
       "slug": "clinic-basra-kids",
       "access_code": "clinic-basra-2026",
-      "plan": "trial",
+      "plan": "free",
       "subscription_status": "trial",
       "registration_status": "approved",
       "whatsapp_booking_enabled": true,
@@ -108,7 +112,7 @@
       "created_at": "2026-05-26T22:24:57.908Z",
       "slug": "clinic-najaf-women",
       "access_code": "clinic-najaf-2026",
-      "plan": "trial",
+      "plan": "free",
       "subscription_status": "pending",
       "registration_status": "pending",
       "whatsapp_booking_enabled": true,
@@ -126,7 +130,7 @@
       "created_at": "2026-05-26T22:24:57.908Z",
       "slug": "clinic-karbala-internal",
       "access_code": "clinic-karbala-2026",
-      "plan": "trial",
+      "plan": "free",
       "subscription_status": "trial",
       "registration_status": "approved",
       "whatsapp_booking_enabled": true,
@@ -688,6 +692,73 @@
       "message": "تم تأكيد حجزك برقم دور 1. يرجى متابعة الدور قبل التوجه إلى العيادة.",
       "status": "sent",
       "created_at": "2026-05-26T23:06:19.230Z"
+    }
+  ],
+  "subscriptions": [
+    {
+      "id": "subscription-clinic-karada-smile",
+      "clinic_id": "clinic-karada-smile",
+      "plan": "free",
+      "status": "trial",
+      "started_at": "2026-05-26T22:24:57.908Z",
+      "current_period_end": null,
+      "trial_ends_at": null,
+      "seats": 3,
+      "price_iqd": 0,
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "updated_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "subscription-clinic-mansour-care",
+      "clinic_id": "clinic-mansour-care",
+      "plan": "free",
+      "status": "trial",
+      "started_at": "2026-05-26T22:24:57.908Z",
+      "current_period_end": null,
+      "trial_ends_at": null,
+      "seats": 3,
+      "price_iqd": 0,
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "updated_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "subscription-clinic-basra-kids",
+      "clinic_id": "clinic-basra-kids",
+      "plan": "free",
+      "status": "trial",
+      "started_at": "2026-05-26T22:24:57.908Z",
+      "current_period_end": null,
+      "trial_ends_at": null,
+      "seats": 3,
+      "price_iqd": 0,
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "updated_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "subscription-clinic-najaf-women",
+      "clinic_id": "clinic-najaf-women",
+      "plan": "free",
+      "status": "pending",
+      "started_at": "2026-05-26T22:24:57.908Z",
+      "current_period_end": null,
+      "trial_ends_at": null,
+      "seats": 1,
+      "price_iqd": 0,
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "updated_at": "2026-05-26T22:24:57.908Z"
+    },
+    {
+      "id": "subscription-clinic-karbala-internal",
+      "clinic_id": "clinic-karbala-internal",
+      "plan": "free",
+      "status": "trial",
+      "started_at": "2026-05-26T22:24:57.908Z",
+      "current_period_end": null,
+      "trial_ends_at": null,
+      "seats": 3,
+      "price_iqd": 0,
+      "created_at": "2026-05-26T22:24:57.908Z",
+      "updated_at": "2026-05-26T22:24:57.908Z"
     }
   ],
   "specialties": [

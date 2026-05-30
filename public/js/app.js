@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=8";
+import { api } from "./api.js?v=9";
 import {
   bookingCard,
   bookingTable,
@@ -15,13 +15,14 @@ import {
   queueStatusCard,
   statusBadge,
   whatsAppShareButton
-} from "./components.js?v=8";
+} from "./components.js?v=9";
 
 const app = document.querySelector("#app");
 
 const state = {
   data: null,
   role: localStorage.getItem("dawri-role") || "patient",
+  authToken: localStorage.getItem("dawri-auth-token") || "",
   timer: null,
   bookingDraft: {},
   dashboardDoctorId: localStorage.getItem("dawri-dashboard-doctor") || "",
@@ -768,6 +769,8 @@ function clinicRegisterPage() {
 
 function loginPage() {
   const hasAccessCode = Boolean(localStorage.getItem("dawri-access-code"));
+  const hasSupabaseSession = Boolean(localStorage.getItem("dawri-auth-token"));
+  const hasSession = hasAccessCode || hasSupabaseSession;
   render(
     `
       <section class="section page-title">
@@ -782,6 +785,20 @@ function loginPage() {
             <span>حجز موعد ومتابعة رقم الدور بدون كود.</span>
             <button class="btn primary" type="button" data-patient-login>متابعة كمريض</button>
           </article>
+
+          <form class="role-card secure-login-card" id="supabase-login-form">
+            <strong>دخول حساب SaaS</strong>
+            <span>دخول فعلي عبر Supabase Auth للمالك، مدير العيادة، أو السكرتير.</span>
+            <label>
+              <span>البريد الإلكتروني</span>
+              <input name="email" type="email" autocomplete="email" placeholder="name@clinic.com" required />
+            </label>
+            <label>
+              <span>كلمة المرور</span>
+              <input name="password" type="password" autocomplete="current-password" placeholder="كلمة المرور" required />
+            </label>
+            <button class="btn primary" type="submit">دخول بالحساب</button>
+          </form>
 
           <form class="role-card secure-login-card" id="staff-login-form">
             <strong>دخول العيادة</strong>
@@ -808,7 +825,7 @@ function loginPage() {
           </form>
         </div>
         ${
-          hasAccessCode
+          hasSession
             ? `<div class="panel auth-session-panel">
                 <p>أنت مسجل حالياً كـ <strong>${roleLabels[state.role] || "مستخدم"}</strong>.</p>
                 <button class="btn ghost" type="button" data-logout>تسجيل خروج</button>
@@ -822,11 +839,33 @@ function loginPage() {
 
   document.querySelector("[data-patient-login]")?.addEventListener("click", async () => {
     state.role = "patient";
+    state.authToken = "";
     localStorage.setItem("dawri-role", state.role);
     localStorage.removeItem("dawri-access-code");
+    localStorage.removeItem("dawri-auth-token");
     await refreshData();
     toast("تم الدخول كمريض", "success");
     navigate("/");
+  });
+
+  document.querySelector("#supabase-login-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const email = form.email.value.trim();
+    const password = form.password.value;
+    try {
+      const session = await api.authLogin({ email, password });
+      state.role = session.role || "patient";
+      state.authToken = session.access_token;
+      localStorage.setItem("dawri-role", state.role);
+      localStorage.setItem("dawri-auth-token", session.access_token);
+      localStorage.removeItem("dawri-access-code");
+      await refreshData();
+      toast(`تم الدخول كـ ${roleLabels[state.role] || "مستخدم"}`, "success");
+      navigate(state.role === "super_admin" ? "/admin" : state.role === "patient" ? "/" : "/dashboard");
+    } catch (error) {
+      toast(error.message || "تعذر تسجيل الدخول بالحساب.", "error");
+    }
   });
 
   document.querySelector("#staff-login-form")?.addEventListener("submit", async (event) => {
@@ -837,8 +876,10 @@ function loginPage() {
     try {
       await api.authCheck(role, accessCode);
       state.role = role;
+      state.authToken = "";
       localStorage.setItem("dawri-role", role);
       localStorage.setItem("dawri-access-code", accessCode);
+      localStorage.removeItem("dawri-auth-token");
       await refreshData();
       toast(`تم الدخول كـ ${roleLabels[role]}`, "success");
       navigate("/dashboard");
@@ -853,8 +894,10 @@ function loginPage() {
     try {
       await api.authCheck("super_admin", accessCode);
       state.role = "super_admin";
+      state.authToken = "";
       localStorage.setItem("dawri-role", "super_admin");
       localStorage.setItem("dawri-access-code", accessCode);
+      localStorage.removeItem("dawri-auth-token");
       await refreshData();
       toast("تم الدخول كمالك المنصة", "success");
       navigate("/admin");
@@ -865,8 +908,10 @@ function loginPage() {
 
   document.querySelector("[data-logout]")?.addEventListener("click", async () => {
     state.role = "patient";
+    state.authToken = "";
     localStorage.setItem("dawri-role", "patient");
     localStorage.removeItem("dawri-access-code");
+    localStorage.removeItem("dawri-auth-token");
     await refreshData();
     toast("تم تسجيل الخروج", "success");
     navigate("/");
@@ -1322,7 +1367,8 @@ function adminDashboardPage(activePath = "/admin") {
       { label: "إجمالي العيادات", value: stats.total_clinics, tone: "green" },
       { label: "حجوزات اليوم", value: stats.today_bookings, tone: "blue" },
       { label: "عيادات فعالة", value: stats.active_clinics, tone: "green" },
-      { label: "عيادات بانتظار الموافقة", value: stats.pending_clinic_approvals, tone: "amber" }
+      { label: "عيادات بانتظار الموافقة", value: stats.pending_clinic_approvals, tone: "amber" },
+      { label: "اشتراكات Pro", value: stats.pro_subscriptions || 0, tone: "green" }
     ])}
     <section class="panel">
       <h2>نظام SaaS تشغيلي</h2>
@@ -1392,7 +1438,7 @@ function adminClinicsPage() {
                       </td>
                       <td>
                         ${statusBadge(clinic.status)}
-                        <small>الخطة: ${escapeHtml(clinic.plan || "trial")}</small>
+                        <small>الخطة: ${escapeHtml(clinic.plan || "free")}</small>
                         <small>نهاية التجربة: ${escapeHtml(clinic.trial_ends_at ? clinic.trial_ends_at.slice(0, 10) : "-")}</small>
                       </td>
                       <td>
@@ -1564,7 +1610,7 @@ async function notFoundPage() {
 }
 
 function hasAccessCode() {
-  return Boolean(localStorage.getItem("dawri-access-code"));
+  return Boolean(localStorage.getItem("dawri-access-code") || localStorage.getItem("dawri-auth-token"));
 }
 
 function accessDeniedPage(kind = "staff") {

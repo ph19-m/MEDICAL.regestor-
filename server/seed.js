@@ -73,7 +73,7 @@ function createSeedData() {
       status: "active",
       slug: "clinic-karada-smile",
       access_code: "clinic-karada-2026",
-      plan: "trial",
+      plan: "free",
       subscription_status: "trial",
       registration_status: "approved",
       whatsapp_booking_enabled: true,
@@ -91,7 +91,7 @@ function createSeedData() {
       status: "active",
       slug: "clinic-mansour-care",
       access_code: "clinic-mansour-2026",
-      plan: "trial",
+      plan: "free",
       subscription_status: "trial",
       registration_status: "approved",
       whatsapp_booking_enabled: true,
@@ -109,7 +109,7 @@ function createSeedData() {
       status: "active",
       slug: "clinic-basra-kids",
       access_code: "clinic-basra-2026",
-      plan: "trial",
+      plan: "free",
       subscription_status: "trial",
       registration_status: "approved",
       whatsapp_booking_enabled: true,
@@ -127,7 +127,7 @@ function createSeedData() {
       status: "pending",
       slug: "clinic-najaf-women",
       access_code: "clinic-najaf-2026",
-      plan: "trial",
+      plan: "free",
       subscription_status: "pending",
       registration_status: "pending",
       whatsapp_booking_enabled: true,
@@ -145,7 +145,7 @@ function createSeedData() {
       status: "active",
       slug: "clinic-karbala-internal",
       access_code: "clinic-karbala-2026",
-      plan: "trial",
+      plan: "free",
       subscription_status: "trial",
       registration_status: "approved",
       whatsapp_booking_enabled: true,
@@ -240,6 +240,7 @@ function createSeedData() {
   const users = [
     {
       id: "user-patient-demo",
+      clinic_id: "clinic-karada-smile",
       name: "مريض تجريبي",
       phone: "07700000001",
       email: "patient@dawri.local",
@@ -249,6 +250,7 @@ function createSeedData() {
     },
     {
       id: "user-secretary-demo",
+      clinic_id: "clinic-karada-smile",
       name: "سكرتيرة العيادة",
       phone: "07700000002",
       email: "secretary@dawri.local",
@@ -258,6 +260,7 @@ function createSeedData() {
     },
     {
       id: "user-clinic-admin-demo",
+      clinic_id: "clinic-karada-smile",
       name: "مدير العيادة",
       phone: "07700000003",
       email: "clinic-admin@dawri.local",
@@ -267,6 +270,7 @@ function createSeedData() {
     },
     {
       id: "user-super-admin-demo",
+      clinic_id: "",
       name: "مالك المنصة",
       phone: "07700000004",
       email: "admin@dawri.local",
@@ -350,11 +354,25 @@ function createSeedData() {
     }
   ];
 
+  const subscriptions = clinics.map((clinic) => ({
+    id: `subscription-${clinic.id}`,
+    clinic_id: clinic.id,
+    plan: clinic.plan || "trial",
+    status: clinic.subscription_status || (clinic.status === "active" ? "trial" : "pending"),
+    started_at: clinic.created_at,
+    current_period_end: clinic.trial_ends_at || null,
+    trial_ends_at: clinic.trial_ends_at || null,
+    seats: clinic.status === "active" ? 3 : 1,
+    price_iqd: 0,
+    created_at: clinic.created_at,
+    updated_at: now.toISOString()
+  }));
+
   return {
     meta: {
       app_name: "Dawri Medical / دوري الطبي",
       seeded_at: now.toISOString(),
-      schema_version: 1
+      schema_version: 2
     },
     users,
     clinics,
@@ -363,6 +381,7 @@ function createSeedData() {
     bookings,
     queueSessions,
     notifications: [],
+    subscriptions,
     specialties,
     governorates,
     revenue: {

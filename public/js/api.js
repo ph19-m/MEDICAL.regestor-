@@ -10,9 +10,11 @@ function apiPath(path) {
 function authHeaders() {
   const role = localStorage.getItem("dawri-role") || "patient";
   const accessCode = localStorage.getItem("dawri-access-code") || "";
+  const authToken = localStorage.getItem("dawri-auth-token") || "";
   return {
     "X-Dawri-Role": role,
-    ...(accessCode ? { "X-Dawri-Access-Code": accessCode } : {})
+    ...(accessCode ? { "X-Dawri-Access-Code": accessCode } : {}),
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
   };
 }
 
@@ -42,6 +44,11 @@ export const api = {
         "X-Dawri-Role": role,
         ...(accessCode ? { "X-Dawri-Access-Code": accessCode } : {})
       }
+    }),
+  authLogin: (payload) =>
+    request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(payload)
     }),
   bootstrap: () => request("/api/bootstrap"),
   doctors: (params = {}) => {
