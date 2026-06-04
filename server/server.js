@@ -294,6 +294,10 @@ function emailFromAddress() {
   return String(process.env.EMAIL_FROM || "Dawri Medical <onboarding@resend.dev>").trim();
 }
 
+function ownerReplyToEmail() {
+  return String(process.env.OWNER_REPLY_TO_EMAIL || platformOwnerEmail()).trim();
+}
+
 function clinicRegistrationEmailMessage(request, clinic, user) {
   const reviewLink = clinicReviewUrl(request, clinic);
   const approveLink = clinicReviewUrl(request, clinic, "approve");
@@ -335,6 +339,78 @@ function clinicRegistrationEmailMessage(request, clinic, user) {
   return { subject, text, html };
 }
 
+function clinicDecisionRecipient(db, clinic) {
+  const admin = (db.users || []).find((user) => user.clinic_id === clinic.id && user.role === "clinic_admin");
+  return String(admin?.email || clinic.admin_email || "").trim();
+}
+
+function clinicDecisionEmailMessage(request, clinic, action) {
+  const approved = action === "approve" || clinic.status === "active";
+  const suspended = action === "suspend";
+  const loginLink = new URL("/login", appBaseUrl(request)).toString();
+  const publicClinicLink = clinic.slug
+    ? new URL(`/clinics/${encodeURIComponent(clinic.slug)}`, appBaseUrl(request)).toString()
+    : appBaseUrl(request);
+  const subject = approved
+    ? `تم قبول تسجيل عيادتكم في دوري الطبي - ${clinic.name}`
+    : suspended
+      ? `تم إيقاف تفعيل عيادتكم في دوري الطبي - ${clinic.name}`
+      : `تمت مراجعة طلب تسجيل عيادتكم في دوري الطبي - ${clinic.name}`;
+  const headline = approved
+    ? "تم قبول تسجيل عيادتكم"
+    : suspended
+      ? "تم إيقاف تفعيل العيادة حالياً"
+      : "لم تتم الموافقة على الطلب حالياً";
+  const body = approved
+    ? [
+        "نبارك لكم، تمت الموافقة على تسجيل عيادتكم في منصة دوري الطبي.",
+        "يمكنكم تسجيل الدخول بنفس البريد الإلكتروني وكلمة المرور المستخدمة أثناء التسجيل.",
+        "كود العيادة يبقى خاصاً بمالك المنصة، وسيتم إرساله لكم من المالك عند الحاجة."
+      ]
+    : suspended
+      ? [
+          "تم إيقاف تفعيل العيادة حالياً من قبل إدارة منصة دوري الطبي.",
+          "يمكنكم الرد على هذا البريد للتواصل مع مالك المنصة ومعرفة سبب الإيقاف أو خطوات إعادة التفعيل."
+        ]
+    : [
+        "نعتذر، بعد مراجعة بيانات العيادة لم تتم الموافقة على الطلب حالياً.",
+        "يمكنكم الرد على هذا البريد أو التواصل مع مالك المنصة لتحديث البيانات وإعادة المراجعة."
+      ];
+  const text = [
+    headline,
+    "",
+    ...body,
+    "",
+    `العيادة: ${clinic.name}`,
+    `المحافظة/المنطقة: ${clinic.governorate} / ${clinic.area}`,
+    `الهاتف: ${clinic.phone}`,
+    approved ? `رابط تسجيل الدخول: ${loginLink}` : "",
+    approved ? `صفحة العيادة: ${publicClinicLink}` : "",
+    "",
+    "فريق دوري الطبي"
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+  const html = `
+    <div dir="rtl" style="font-family:Arial,Tahoma,sans-serif;line-height:1.8;color:#10233f">
+      <h2 style="margin:0 0 12px">${escapeEmailHtml(headline)}</h2>
+      ${body.map((line) => `<p>${escapeEmailHtml(line)}</p>`).join("")}
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">العيادة</td><td style="padding:8px;border-bottom:1px solid #e5e7eb"><strong>${escapeEmailHtml(clinic.name)}</strong></td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">الموقع</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${escapeEmailHtml(clinic.governorate)} / ${escapeEmailHtml(clinic.area)}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">الهاتف</td><td style="padding:8px;border-bottom:1px solid #e5e7eb" dir="ltr">${escapeEmailHtml(clinic.phone)}</td></tr>
+      </table>
+      ${
+        approved
+          ? `<p><a href="${loginLink}" style="display:inline-block;background:#0f766e;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;margin-left:8px">تسجيل الدخول</a><a href="${publicClinicLink}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px">صفحة العيادة</a></p>`
+          : ""
+      }
+      <p style="color:#64748b">فريق دوري الطبي</p>
+    </div>
+  `;
+  return { subject, text, html };
+}
+
 function escapeEmailHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -343,9 +419,9 @@ function escapeEmailHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-async function sendEmailWithResend({ to, subject, text, html }) {
+async function sendEmailWithResend({ to, subject, text, html, replyTo }) {
   const apiKey = process.env.RESEND_API_KEY || "";
-  if (!to) return { status: "skipped", reason: "PLATFORM_OWNER_EMAIL غير مضاف." };
+  if (!to) return { status: "skipped", reason: "البريد الإلكتروني للمستلم غير مضاف." };
   if (!apiKey) return { status: "pending", reason: "RESEND_API_KEY غير مضاف." };
   if (typeof fetch !== "function") return { status: "failed", reason: "fetch غير متاح في بيئة التشغيل." };
 
@@ -361,6 +437,7 @@ async function sendEmailWithResend({ to, subject, text, html }) {
       body: JSON.stringify({
         from: emailFromAddress(),
         to: [to],
+        ...(replyTo ? { reply_to: [replyTo] } : {}),
         subject,
         text,
         html
@@ -1461,6 +1538,13 @@ function applyClinicDecision(db, clinic, status) {
   return { clinic, subscription };
 }
 
+function clinicDecisionAction(previousStatus, previousRegistrationStatus, nextStatus) {
+  if (nextStatus === "active") return "approve";
+  if (nextStatus === "inactive" && (previousStatus === "pending" || previousRegistrationStatus === "pending")) return "reject";
+  if (nextStatus === "inactive") return "suspend";
+  return "";
+}
+
 async function createClinicRegistration(db, payload) {
   const name = String(payload.clinic_name || payload.name || "").trim();
   const phone = String(payload.phone || "").trim();
@@ -1570,7 +1654,8 @@ async function notifyOwnerAboutClinicRegistration(request, db, clinic, user) {
     to: recipient,
     subject: email.subject,
     text: email.text,
-    html: email.html
+    html: email.html,
+    replyTo: ownerReplyToEmail()
   });
   const now = new Date().toISOString();
   const notification = {
@@ -1584,6 +1669,37 @@ async function notifyOwnerAboutClinicRegistration(request, db, clinic, user) {
     provider: result.provider_id ? "resend" : "",
     provider_id: result.provider_id || "",
     failure_reason: result.reason || "",
+    created_at: now,
+    updated_at: now
+  };
+  db.notifications.push(notification);
+  return notification;
+}
+
+async function notifyClinicAboutDecision(request, db, clinic, action) {
+  db.notifications = Array.isArray(db.notifications) ? db.notifications : [];
+  const recipient = clinicDecisionRecipient(db, clinic);
+  const email = clinicDecisionEmailMessage(request, clinic, action);
+  const result = await sendEmailWithResend({
+    to: recipient,
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
+    replyTo: ownerReplyToEmail()
+  });
+  const now = new Date().toISOString();
+  const notification = {
+    id: makeId("notification"),
+    booking_id: "",
+    clinic_id: clinic.id,
+    type: "email",
+    message: email.text,
+    status: result.status,
+    recipient,
+    provider: result.provider_id ? "resend" : "",
+    provider_id: result.provider_id || "",
+    failure_reason: result.reason || "",
+    decision_action: action,
     created_at: now,
     updated_at: now
   };
@@ -1908,14 +2024,21 @@ async function handleApi(request, response, url) {
       if (!verifyClinicReviewToken(clinic.id, payload.token)) {
         return sendError(response, 403, "رابط مراجعة الطلب غير صحيح أو غير مخوّل.");
       }
+      if (clinic.status !== "pending") {
+        return sendError(response, 409, "تم اتخاذ قرار على هذا الطلب مسبقاً.");
+      }
       const action = String(payload.action || "");
       const status = action === "approve" ? "active" : action === "reject" ? "inactive" : "";
       const result = applyClinicDecision(db, clinic, status);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db, ["clinics", "users", "subscriptions"]);
+      const notification = await notifyClinicAboutDecision(request, db, result.clinic, action);
+      await persistDb(db, ["clinics", "users", "subscriptions", "notifications"]);
       return sendJson(response, 200, {
         ok: true,
-        data: clinicReviewDetails(db, result.clinic)
+        data: {
+          ...clinicReviewDetails(db, result.clinic),
+          decision_email_status: notification.status
+        }
       });
     }
 
@@ -1992,11 +2115,22 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const clinic = findClinic(db, segments[2]);
       if (!clinic) return sendError(response, 404, "لم يتم العثور على العيادة.");
+      const previousStatus = clinic.status;
+      const previousRegistrationStatus = clinic.registration_status;
       ["name", "governorate", "area", "address", "phone", "plan", "subscription_status"].forEach((field) => {
         if (payload[field] !== undefined) clinic[field] = payload[field];
       });
       const result = payload.status ? applyClinicDecision(db, clinic, payload.status) : { clinic };
       if (result.error) return sendError(response, 400, result.error);
+      let notification = null;
+      if (payload.status && (previousStatus !== payload.status || previousRegistrationStatus === "pending")) {
+        notification = await notifyClinicAboutDecision(
+          request,
+          db,
+          result.clinic,
+          clinicDecisionAction(previousStatus, previousRegistrationStatus, payload.status)
+        );
+      }
       if (!payload.status) {
         const subscription = (db.subscriptions || []).find((item) => item.clinic_id === clinic.id);
         if (subscription) {
@@ -2005,8 +2139,14 @@ async function handleApi(request, response, url) {
           subscription.updated_at = new Date().toISOString();
         }
       }
-      await persistDb(db, ["clinics", "users", "subscriptions"]);
-      return sendJson(response, 200, { ok: true, data: result.clinic });
+      await persistDb(db, notification ? ["clinics", "users", "subscriptions", "notifications"] : ["clinics", "users", "subscriptions"]);
+      return sendJson(response, 200, {
+        ok: true,
+        data: {
+          ...result.clinic,
+          ...(notification ? { decision_email_status: notification.status } : {})
+        }
+      });
     }
 
     if (method === "GET" && url.pathname === "/api/admin/stats") {

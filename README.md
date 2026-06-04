@@ -114,10 +114,13 @@ Keep these values short so live queue and booking capacity stay fresh.
 Owner email review flow:
 
 - Set `PLATFORM_OWNER_EMAIL` to the platform owner's email address.
+- Optional: set `OWNER_REPLY_TO_EMAIL` to the owner's personal email so clinic replies go directly to that inbox. If omitted, it uses `PLATFORM_OWNER_EMAIL`.
 - Set `RESEND_API_KEY` and `EMAIL_FROM` to enable real email delivery.
+- `EMAIL_FROM` must be a sender address verified in Resend. Use the personal email as `PLATFORM_OWNER_EMAIL` / `OWNER_REPLY_TO_EMAIL`, not as `EMAIL_FROM`, unless that sender is verified.
 - Set `EMAIL_ACTION_SECRET` to a long random secret. It signs clinic approve/reject review links.
 - When a clinic registers, the owner receives an email with a secure `/clinic-review/{clinic_id}?token=...` link.
 - The review page shows clinic details and lets the owner approve or reject without exposing the private clinic access code.
+- After approval or rejection, the clinic admin receives a decision email. Replies to that email go to `OWNER_REPLY_TO_EMAIL`.
 
 For local development with PostgreSQL, create a `.env` from `.env.example` or set `DATABASE_URL` in your shell before running:
 
@@ -168,6 +171,7 @@ The app supports the first multi-tenant SaaS workflow:
 - Clinic staff can add doctors only to their own clinic; the server ignores any forged `clinic_id`.
 - Clinic registration confirmation includes a WhatsApp handoff to the platform owner number `07767088664`.
 - Clinic registration also creates an owner email notification when `PLATFORM_OWNER_EMAIL` and `RESEND_API_KEY` are configured.
+- Approval/rejection sends a decision email to the clinic admin email and stores the delivery status in notifications.
 - The clinic access code is not delivered automatically to applicants. The platform owner approves the clinic, then sends the code manually from `/admin/clinics` through the prepared WhatsApp message.
 - Each clinic has SaaS settings for trial plan status and WhatsApp booking delivery from the clinic dashboard.
 - Clinic staff can send booking details to the patient's WhatsApp from the daily bookings table. Fully automatic background sending is prepared for WhatsApp Business API integration.

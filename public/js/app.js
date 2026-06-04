@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=12";
+import { api } from "./api.js?v=13";
 import {
   bookingCard,
   bookingTable,
@@ -15,7 +15,7 @@ import {
   queueStatusCard,
   statusBadge,
   whatsAppShareButton
-} from "./components.js?v=12";
+} from "./components.js?v=13";
 
 const app = document.querySelector("#app");
 
@@ -837,6 +837,17 @@ function clinicReviewStatusLabel(status) {
   );
 }
 
+function emailDeliveryStatusLabel(status) {
+  return (
+    {
+      sent: "تم إرسال الإيميل",
+      pending: "بانتظار إعداد خدمة الإيميل",
+      skipped: "لا يوجد بريد إلكتروني للمستلم",
+      failed: "تعذر إرسال الإيميل"
+    }[status] || "-"
+  );
+}
+
 async function clinicReviewPage(id) {
   const params = queryParams();
   const token = params.token || "";
@@ -903,6 +914,7 @@ async function clinicReviewPage(id) {
         const action = button.dataset.reviewAction;
         await withButtonLoading(button, async () => {
           const updated = await api.submitClinicReview(id, { token, action });
+          const decisionEmailStatus = emailDeliveryStatusLabel(updated.decision_email_status);
           toast(action === "approve" ? "تمت الموافقة على العيادة." : "تم رفض طلب العيادة.", "success");
           render(
             `
@@ -913,6 +925,7 @@ async function clinicReviewPage(id) {
                     <span class="eyebrow">تم تحديث الطلب</span>
                     <h1>${escapeHtml(updated.name)}</h1>
                     <p>الحالة الحالية: ${escapeHtml(clinicReviewStatusLabel(updated.registration_status || updated.status))}</p>
+                    <p>إشعار العيادة: ${escapeHtml(decisionEmailStatus)}</p>
                   </div>
                   <div class="button-row confirmation-actions">
                     <a class="btn primary large" href="/admin/clinics" data-link>فتح لوحة المالك</a>
@@ -1662,6 +1675,11 @@ function adminClinicsPage() {
       await withButtonLoading(button, async () => {
         const clinic = await api.updateClinic(button.dataset.clinicStatus, { status: button.dataset.status });
         upsertStateItem("clinics", clinic);
+        if (clinic.decision_email_status) {
+          toast(`تم تحديث العيادة. إشعار الإيميل: ${emailDeliveryStatusLabel(clinic.decision_email_status)}`, "success");
+        } else {
+          toast("تم تحديث حالة العيادة.", "success");
+        }
         route();
       }).catch((error) => {
         toast(error.message, "error");
