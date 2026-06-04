@@ -53,9 +53,11 @@ const APP_TIME_ZONE = "Asia/Baghdad";
 const DEMO_STAFF_ACCESS_CODE = "clinic-2026";
 const DEMO_SUPER_ADMIN_ACCESS_CODE = "owner-2026";
 const PUBLIC_BOOTSTRAP_CACHE_MS = Number(process.env.PUBLIC_BOOTSTRAP_CACHE_MS || 20000);
+const PUBLIC_ROUTE_CACHE_MS = Number(process.env.PUBLIC_ROUTE_CACHE_MS || 10000);
 const SAAS_PLANS = new Set(["free", "basic", "pro", "trial"]);
 
 let publicBootstrapCache = null;
+const publicRouteCache = new Map();
 
 function todayISO() {
   return toBaghdadDateString(new Date());
@@ -113,8 +115,49 @@ function setPublicBootstrapCache(data) {
   };
 }
 
-async function persistDb(db, collections) {
+function cacheKeyFor(url) {
+  return `${url.pathname}${url.search}`;
+}
+
+function clonePayload(data) {
+  if (typeof structuredClone === "function") return structuredClone(data);
+  return JSON.parse(JSON.stringify(data));
+}
+
+function isPublicRouteCacheable(method, url, auth) {
+  if (PUBLIC_ROUTE_CACHE_MS <= 0 || method !== "GET" || auth.accessCode || auth.bearerToken) return false;
+  if (url.pathname === "/api/doctors") return true;
+  if (/^\/api\/doctors\/[^/]+$/.test(url.pathname)) return true;
+  if (/^\/api\/availability\/[^/]+$/.test(url.pathname)) return true;
+  if (/^\/api\/clinics\/[^/]+\/public$/.test(url.pathname)) return true;
+  return false;
+}
+
+function getPublicRouteCache(method, url, auth) {
+  if (!isPublicRouteCacheable(method, url, auth)) return null;
+  const cached = publicRouteCache.get(cacheKeyFor(url));
+  if (!cached || cached.expiresAt <= Date.now()) {
+    publicRouteCache.delete(cacheKeyFor(url));
+    return null;
+  }
+  return clonePayload(cached.data);
+}
+
+function setPublicRouteCache(method, url, auth, data) {
+  if (!isPublicRouteCacheable(method, url, auth)) return;
+  publicRouteCache.set(cacheKeyFor(url), {
+    data: clonePayload(data),
+    expiresAt: Date.now() + PUBLIC_ROUTE_CACHE_MS
+  });
+}
+
+function clearApiCaches() {
   publicBootstrapCache = null;
+  publicRouteCache.clear();
+}
+
+async function persistDb(db, collections) {
+  clearApiCaches();
   return writeDb(db, { collections });
 }
 
@@ -356,6 +399,7 @@ function publicBootstrap(db, request) {
     specialties: db.specialties,
     governorates: db.governorates,
     stats: stats(db),
+    demo_status: demoDataStatus(db),
     app_url: appBaseUrl(request),
     today: todayISO()
   };
@@ -406,6 +450,7 @@ function fullBootstrap(db, auth = {}, request) {
     specialties: db.specialties,
     governorates: db.governorates,
     stats: stats(scoped),
+    demo_status: demoDataStatus(scoped),
     app_url: appBaseUrl(request),
     today: todayISO()
   };
@@ -544,6 +589,21 @@ function getBlocks(schedule) {
     blocks.push(formatTimeBlock(cursor, Math.min(60, end - cursor)));
   }
   return blocks;
+}
+
+function normalizeTimeBlockLabel(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function parseTimeBlock(value) {
+  const normalized = normalizeTimeBlockLabel(value);
+  const match = normalized.match(/^(\d{2}:\d{2})\s-\s(\d{2}:\d{2})$/);
+  if (!match) return null;
+  return {
+    label: normalized,
+    start: match[1],
+    end: match[2]
+  };
 }
 
 function appointmentDays(db, doctorId, count = 10) {
@@ -743,6 +803,28 @@ function publicBooking(db, booking) {
   };
 }
 
+function demoDataStatus(db) {
+  if (process.env.DATABASE_URL) return { stale: false };
+
+  const bookings = Array.isArray(db.bookings) ? db.bookings : [];
+  if (!bookings.length) return { stale: false };
+
+  const today = todayISO();
+  const hasCurrentOrFutureBooking = bookings.some(
+    (booking) => booking.booking_date && booking.booking_date >= today && booking.status !== "cancelled"
+  );
+  const hasPastBooking = bookings.some((booking) => booking.booking_date && booking.booking_date < today);
+
+  if (hasPastBooking && !hasCurrentOrFutureBooking) {
+    return {
+      stale: true,
+      message: "البيانات التجريبية الحالية أقدم من تاريخ اليوم، لذلك قد تبدو لوحة اليوم فارغة حتى بعد توفر المواعيد القادمة."
+    };
+  }
+
+  return { stale: false };
+}
+
 function buildReminderMessage(booking, session) {
   const status = normalizeSessionStatus(session.status);
   if (booking.status === "cancelled") return "تم إلغاء الحجز.";
@@ -812,7 +894,7 @@ function validatePhone(phone) {
 function createBooking(db, payload) {
   const doctorId = payload.doctor_id || payload.doctorId;
   const bookingDate = payload.booking_date || payload.bookingDate;
-  const timeBlock = payload.time_block || payload.timeBlock;
+  const timeBlock = normalizeTimeBlockLabel(payload.time_block || payload.timeBlock);
   const patientName = String(payload.patient_name || payload.patientName || "").trim();
   const patientPhone = String(payload.patient_phone || payload.patientPhone || "").trim();
   const patientAge = Number(payload.patient_age || payload.patientAge || 0);
@@ -832,6 +914,10 @@ function createBooking(db, payload) {
   if (!clinic || clinic.status !== "active") return { error: "العيادة غير متاحة للحجز حالياً." };
 
   const schedule = findScheduleForDate(db, doctorId, bookingDate);
+  const availableBlocks = schedule ? getBlocks(schedule).map(normalizeTimeBlockLabel) : [];
+  if (schedule && !availableBlocks.includes(timeBlock)) {
+    return { error: "الوقت التقريبي المختار غير متاح لهذا اليوم." };
+  }
   if (!schedule) return { error: "لا توجد مواعيد متاحة لهذا اليوم." };
 
   const activeBookings = db.bookings.filter(
@@ -853,11 +939,22 @@ function createBooking(db, payload) {
     return { error: "الحجوزات ممتلئة لهذا اليوم" };
   }
 
+  const parsedBlock = parseTimeBlock(timeBlock);
+  if (!parsedBlock) return { error: "الوقت التقريبي غير صحيح." };
+  const blockStartMinutes = minutesFromTime(parsedBlock.start);
+  const blockEndMinutes = minutesFromTime(parsedBlock.end);
+  const consultationMinutes = Math.max(Number(schedule.average_consultation_minutes) || 10, 1);
+  const blockCapacity = Math.max(1, Math.floor((blockEndMinutes - blockStartMinutes) / consultationMinutes));
+  const blockBookings = activeBookings.filter(
+    (booking) => normalizeTimeBlockLabel(booking.time_block) === timeBlock
+  );
+  if (blockBookings.length >= blockCapacity) {
+    return { error: "الفترة الزمنية المختارة ممتلئة، اختر فترة أخرى." };
+  }
+
   const queueNumber =
     activeBookings.reduce((max, booking) => Math.max(max, Number(booking.queue_number) || 0), 0) + 1;
-  const approximateTime = timeFromMinutes(
-    minutesFromTime(schedule.start_time) + (queueNumber - 1) * schedule.average_consultation_minutes
-  );
+  const approximateTime = timeFromMinutes(blockStartMinutes + blockBookings.length * consultationMinutes);
   const session = getOrCreateQueueSession(db, doctorId, bookingDate);
   const now = new Date().toISOString();
 
@@ -924,13 +1021,14 @@ function todayDashboard(db, searchParams, auth = {}) {
     .filter((booking) => booking.doctor_id === doctorId && booking.booking_date === date)
     .sort((a, b) => a.queue_number - b.queue_number)
     .map((booking) => publicBooking(db, booking));
-  const session = doctor ? getOrCreateQueueSession(db, doctorId, date) : null;
+  const session = doctor ? getQueueSession(db, doctorId, date) : null;
 
   return {
     date,
     doctor: doctor ? publicDoctor(db, doctor) : null,
     clinic_settings: clinicSaasSettings(clinic),
     session,
+    demo_status: demoDataStatus(db),
     bookings,
     metrics: {
       today_bookings: bookings.length,
@@ -1032,7 +1130,7 @@ function patchQueue(db, doctorId, dateString, payload) {
   if (payload.action === "set") {
     const nextValue = Number(payload.value);
     if (Number.isNaN(nextValue) || nextValue < 0) return { error: "رقم الدور غير صحيح." };
-    session.current_queue_number = Math.min(nextValue, Math.max(maxQueue, nextValue));
+    session.current_queue_number = Math.min(nextValue, Math.max(maxQueue, 0));
   }
 
   if (payload.status) {
@@ -1366,6 +1464,13 @@ async function handleApi(request, response, url) {
         data: { ...cachedPublicBootstrap, app_url: appBaseUrl(request) }
       });
     }
+    const cachedPublicRoute = getPublicRouteCache(method, url, requestAuth);
+    if (cachedPublicRoute) {
+      return sendJson(response, 200, {
+        ok: true,
+        data: cachedPublicRoute
+      });
+    }
 
     const db = await readDb();
     const normalizedTenants = ensureTenantFields(db);
@@ -1433,9 +1538,11 @@ async function handleApi(request, response, url) {
     }
 
     if (method === "GET" && url.pathname === "/api/doctors") {
+      const data = filterDoctors(db, url.searchParams);
+      setPublicRouteCache(method, url, auth, data);
       return sendJson(response, 200, {
         ok: true,
-        data: filterDoctors(db, url.searchParams)
+        data
       });
     }
 
@@ -1445,12 +1552,14 @@ async function handleApi(request, response, url) {
       const clinicDoctors = db.doctors
         .filter((doctor) => doctor.clinic_id === clinic.id && doctor.status === "active")
         .map((doctor) => publicDoctor(db, doctor));
+      const data = {
+        clinic: publicClinic(clinic),
+        doctors: clinicDoctors
+      };
+      setPublicRouteCache(method, url, auth, data);
       return sendJson(response, 200, {
         ok: true,
-        data: {
-          clinic: publicClinic(clinic),
-          doctors: clinicDoctors
-        }
+        data
       });
     }
 
@@ -1461,9 +1570,11 @@ async function handleApi(request, response, url) {
       if (!clinic || clinic.status !== "active") {
         return sendError(response, 404, "الطبيب غير متاح للحجز حالياً.");
       }
+      const data = publicDoctor(db, doctor);
+      setPublicRouteCache(method, url, auth, data);
       return sendJson(response, 200, {
         ok: true,
-        data: publicDoctor(db, doctor)
+        data
       });
     }
 
@@ -1474,9 +1585,11 @@ async function handleApi(request, response, url) {
       if (!clinic || clinic.status !== "active") {
         return sendError(response, 404, "الطبيب غير متاح للحجز حالياً.");
       }
+      const data = appointmentDays(db, doctor.id, 14);
+      setPublicRouteCache(method, url, auth, data);
       return sendJson(response, 200, {
         ok: true,
-        data: appointmentDays(db, doctor.id, 14)
+        data
       });
     }
 
@@ -1564,7 +1677,6 @@ async function handleApi(request, response, url) {
         }
       }
       const dashboardData = todayDashboard(db, url.searchParams, auth);
-      await persistDb(db, ["queueSessions"]);
       return sendJson(response, 200, {
         ok: true,
         data: dashboardData
@@ -1594,6 +1706,7 @@ async function handleApi(request, response, url) {
     }
 
     if (method === "POST" && url.pathname === "/api/doctors") {
+      if (auth.role === "secretary") return sendError(response, 403, "إضافة الأطباء مسموحة لمدير العيادة فقط.");
       const payload = await parseBody(request);
       if (auth.clinicId) payload.clinic_id = auth.clinicId;
       const result = createDoctor(db, payload);

@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=10";
+import { api } from "./api.js?v=11";
 import {
   bookingCard,
   bookingTable,
@@ -15,7 +15,7 @@ import {
   queueStatusCard,
   statusBadge,
   whatsAppShareButton
-} from "./components.js?v=10";
+} from "./components.js?v=11";
 
 const app = document.querySelector("#app");
 
@@ -40,6 +40,36 @@ function setFormSubmitting(form, submitting, loadingText = "جاري المعا�
   if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
   button.disabled = submitting;
   button.textContent = submitting ? loadingText : button.dataset.originalText;
+}
+
+function upsertStateItem(collection, item) {
+  if (!state.data || !item?.id || !Array.isArray(state.data[collection])) return;
+  const index = state.data[collection].findIndex((entry) => entry.id === item.id);
+  if (index >= 0) {
+    state.data[collection] = state.data[collection].map((entry) =>
+      entry.id === item.id ? { ...entry, ...item } : entry
+    );
+    return;
+  }
+  state.data[collection] = [...state.data[collection], item];
+}
+
+function removeStateItem(collection, id) {
+  if (!state.data || !id || !Array.isArray(state.data[collection])) return;
+  state.data[collection] = state.data[collection].filter((entry) => entry.id !== id);
+}
+
+async function withButtonLoading(button, task, loadingText = "جاري التنفيذ...") {
+  if (!button || button.disabled) return;
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = loadingText;
+  try {
+    await task();
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
 }
 
 const roleLabels = {
@@ -571,7 +601,6 @@ function bindBookingFlow() {
     button.textContent = "جاري تثبيت الحجز...";
     try {
       const booking = await api.createBooking(Object.fromEntries(new FormData(form)));
-      await refreshData();
       navigate(`/booking-confirmation/${encodeURIComponent(booking.booking_code)}`);
     } catch (error) {
       toast(error.message, "error");
@@ -1025,6 +1054,11 @@ async function dashboardTodayPage(activePath = "/dashboard") {
         </div>
         ${doctorSelect(state.data.doctors)}
       </div>
+      ${
+        data.demo_status?.stale
+          ? `<div class="notice warning"><strong>تنبيه بيانات تجريبية</strong><p>${escapeHtml(data.demo_status.message)}</p></div>`
+          : ""
+      }
       ${dashboardStats([
         { label: "حجوزات اليوم", value: data.metrics.today_bookings, tone: "blue", caption: "Today's bookings" },
         { label: "بانتظار الدور", value: data.metrics.waiting_patients, tone: "green", caption: "Waiting patients" },
@@ -1101,40 +1135,46 @@ function bindDashboardControls(data) {
 
   document.querySelectorAll("[data-queue-action]").forEach((button) => {
     button.addEventListener("click", async () => {
-      try {
+      await withButtonLoading(button, async () => {
         await api.updateQueue(data.doctor.id, data.date, { action: button.dataset.queueAction });
         route();
-      } catch (error) {
+      }).catch((error) => {
         toast(error.message, "error");
-      }
+      });
     });
   });
 
   document.querySelectorAll("[data-session-status]").forEach((button) => {
     button.addEventListener("click", async () => {
-      try {
+      await withButtonLoading(button, async () => {
         await api.updateQueue(data.doctor.id, data.date, { status: button.dataset.sessionStatus });
         route();
-      } catch (error) {
+      }).catch((error) => {
         toast(error.message, "error");
-      }
+      });
     });
   });
 
   document.querySelector("#manual-queue-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const queue = new FormData(event.currentTarget).get("queue");
+    const form = event.currentTarget;
+    const queue = new FormData(form).get("queue");
+    setFormSubmitting(form, true, "جاري التثبيت...");
     try {
       await api.updateQueue(data.doctor.id, data.date, { action: "set", value: queue });
       route();
     } catch (error) {
       toast(error.message, "error");
+    } finally {
+      setFormSubmitting(form, false);
     }
   });
 
   document.querySelector("#delay-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    setFormSubmitting(form, true, "جاري التثبيت...");
     try {
       await api.updateQueue(data.doctor.id, data.date, {
         delay_reason: formData.get("delay_reason"),
@@ -1143,17 +1183,19 @@ function bindDashboardControls(data) {
       route();
     } catch (error) {
       toast(error.message, "error");
+    } finally {
+      setFormSubmitting(form, false);
     }
   });
 
   document.querySelectorAll("[data-booking-action]").forEach((button) => {
     button.addEventListener("click", async () => {
-      try {
+      await withButtonLoading(button, async () => {
         await api.updateBooking(button.dataset.code, { status: button.dataset.bookingAction });
         route();
-      } catch (error) {
+      }).catch((error) => {
         toast(error.message, "error");
-      }
+      });
     });
   });
 }
@@ -1228,14 +1270,14 @@ async function dashboardSchedulePage() {
       fields.forEach((field) => {
         payload[field.dataset.field] = field.dataset.field === "is_active" ? field.value === "true" : field.value;
       });
-      try {
-        await api.updateSchedule(id, payload);
-        await refreshData();
+      await withButtonLoading(button, async () => {
+        const schedule = await api.updateSchedule(id, payload);
+        upsertStateItem("schedules", schedule);
         toast("تم تحديث جدول الدوام.", "success");
         route();
-      } catch (error) {
+      }).catch((error) => {
         toast(error.message, "error");
-      }
+      });
     });
   });
 }
@@ -1284,24 +1326,28 @@ function dashboardDoctorsPage() {
   setTitle("إدارة الأطباء");
   document.querySelector("#doctor-create-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
+    setFormSubmitting(form, true, "جاري إضافة الطبيب...");
     try {
-      await api.createDoctor(Object.fromEntries(new FormData(event.currentTarget)));
+      await api.createDoctor(Object.fromEntries(new FormData(form)));
       await refreshData();
       toast("تم إضافة الطبيب.", "success");
       route();
     } catch (error) {
       toast(error.message, "error");
+    } finally {
+      setFormSubmitting(form, false);
     }
   });
   document.querySelectorAll("[data-toggle-doctor]").forEach((button) => {
     button.addEventListener("click", async () => {
-      try {
-        await api.updateDoctor(button.dataset.toggleDoctor, { status: button.dataset.nextStatus });
-        await refreshData();
+      await withButtonLoading(button, async () => {
+        const doctor = await api.updateDoctor(button.dataset.toggleDoctor, { status: button.dataset.nextStatus });
+        upsertStateItem("doctors", doctor);
         route();
-      } catch (error) {
+      }).catch((error) => {
         toast(error.message, "error");
-      }
+      });
     });
   });
 }
@@ -1370,13 +1416,17 @@ function dashboardSettingsPage() {
         whatsapp_sender_phone: formData.get("whatsapp_sender_phone"),
         whatsapp_delivery_mode: formData.get("whatsapp_delivery_mode")
       };
+      const form = event.currentTarget;
+      setFormSubmitting(form, true, "جاري الحفظ...");
       try {
-        await api.updateClinicSettings(event.currentTarget.dataset.clinicSettings, payload);
-        await refreshData();
+        const clinic = await api.updateClinicSettings(form.dataset.clinicSettings, payload);
+        upsertStateItem("clinics", clinic);
         toast("تم حفظ إعدادات واتساب للعيادة.", "success");
         route();
       } catch (error) {
         toast(error.message, "error");
+      } finally {
+        setFormSubmitting(form, false);
       }
     });
   });
@@ -1488,13 +1538,13 @@ function adminClinicsPage() {
   setTitle("إدارة العيادات");
   document.querySelectorAll("[data-clinic-status]").forEach((button) => {
     button.addEventListener("click", async () => {
-      try {
-        await api.updateClinic(button.dataset.clinicStatus, { status: button.dataset.status });
-        await refreshData();
+      await withButtonLoading(button, async () => {
+        const clinic = await api.updateClinic(button.dataset.clinicStatus, { status: button.dataset.status });
+        upsertStateItem("clinics", clinic);
         route();
-      } catch (error) {
+      }).catch((error) => {
         toast(error.message, "error");
-      }
+      });
     });
   });
 }
@@ -1553,23 +1603,27 @@ function adminSpecialtiesPage() {
   setTitle("الاختصاصات");
   document.querySelector("#specialty-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
+    setFormSubmitting(form, true, "جاري الإضافة...");
     try {
-      await api.createSpecialty(Object.fromEntries(new FormData(event.currentTarget)));
-      await refreshData();
+      const specialty = await api.createSpecialty(Object.fromEntries(new FormData(form)));
+      upsertStateItem("specialties", specialty);
       route();
     } catch (error) {
       toast(error.message, "error");
+    } finally {
+      setFormSubmitting(form, false);
     }
   });
   document.querySelectorAll("[data-delete-specialty]").forEach((button) => {
     button.addEventListener("click", async () => {
-      try {
+      await withButtonLoading(button, async () => {
         await api.deleteSpecialty(button.dataset.deleteSpecialty);
-        await refreshData();
+        removeStateItem("specialties", button.dataset.deleteSpecialty);
         route();
-      } catch (error) {
+      }).catch((error) => {
         toast(error.message, "error");
-      }
+      });
     });
   });
 }
@@ -1602,12 +1656,16 @@ function adminAreasPage() {
   setTitle("المحافظات والمناطق");
   document.querySelector("#governorate-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
+    setFormSubmitting(form, true, "جاري الإضافة...");
     try {
-      await api.createGovernorate(Object.fromEntries(new FormData(event.currentTarget)));
-      await refreshData();
+      const governorate = await api.createGovernorate(Object.fromEntries(new FormData(form)));
+      upsertStateItem("governorates", governorate);
       route();
     } catch (error) {
       toast(error.message, "error");
+    } finally {
+      setFormSubmitting(form, false);
     }
   });
 }

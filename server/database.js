@@ -14,6 +14,7 @@ const USE_POSTGRES = Boolean(process.env.DATABASE_URL);
 const ALLOW_JSON_FALLBACK =
   process.env.DAWRI_ALLOW_JSON_FALLBACK === "true" ||
   (!process.env.VERCEL && process.env.NODE_ENV !== "production");
+const DB_READ_CACHE_MS = Number(process.env.DB_READ_CACHE_MS || 8000);
 
 const APP_COLLECTIONS = [
   "clinics",
@@ -199,6 +200,29 @@ const COLLECTIONS = {
 
 let pool;
 let postgresReady = false;
+let readDbCache = null;
+
+function cloneDb(data) {
+  if (typeof structuredClone === "function") return structuredClone(data);
+  return JSON.parse(JSON.stringify(data));
+}
+
+function getReadDbCache() {
+  if (DB_READ_CACHE_MS <= 0 || !readDbCache || readDbCache.expiresAt <= Date.now()) return null;
+  return cloneDb(readDbCache.data);
+}
+
+function setReadDbCache(data) {
+  if (DB_READ_CACHE_MS <= 0) return;
+  readDbCache = {
+    data: cloneDb(data),
+    expiresAt: Date.now() + DB_READ_CACHE_MS
+  };
+}
+
+function clearReadDbCache() {
+  readDbCache = null;
+}
 
 function getPool() {
   if (pool) return pool;
@@ -637,13 +661,23 @@ function writeJsonDb(data) {
 }
 
 async function readDb() {
-  if (USE_POSTGRES) return readPostgresDb();
-  return readJsonDb();
+  const cached = getReadDbCache();
+  if (cached) return cached;
+
+  const data = USE_POSTGRES ? await readPostgresDb() : readJsonDb();
+  setReadDbCache(data);
+  return cloneDb(data);
 }
 
 async function writeDb(data, options = {}) {
-  if (USE_POSTGRES) return writePostgresDb(data, options);
+  clearReadDbCache();
+  if (USE_POSTGRES) {
+    const result = await writePostgresDb(data, options);
+    clearReadDbCache();
+    return result;
+  }
   writeJsonDb(data);
+  clearReadDbCache();
   return undefined;
 }
 

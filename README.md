@@ -103,6 +103,14 @@ Supabase setup:
 
 The full Supabase SQL schema is kept in `server/db/schema.sql`. You can run it manually in Supabase SQL Editor, but the server also applies the schema automatically when `DATABASE_URL` is configured.
 
+Performance cache settings for Vercel/Supabase:
+
+- `DB_READ_CACHE_MS=8000`: short in-memory cache for repeated reads inside a warm Vercel function.
+- `PUBLIC_BOOTSTRAP_CACHE_MS=20000`: public homepage/bootstrap cache.
+- `PUBLIC_ROUTE_CACHE_MS=10000`: public doctor, clinic, and availability route cache.
+
+Keep these values short so live queue and booking capacity stay fresh.
+
 For local development with PostgreSQL, create a `.env` from `.env.example` or set `DATABASE_URL` in your shell before running:
 
 ```powershell
