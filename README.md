@@ -111,6 +111,14 @@ Performance cache settings for Vercel/Supabase:
 
 Keep these values short so live queue and booking capacity stay fresh.
 
+Owner email review flow:
+
+- Set `PLATFORM_OWNER_EMAIL` to the platform owner's email address.
+- Set `RESEND_API_KEY` and `EMAIL_FROM` to enable real email delivery.
+- Set `EMAIL_ACTION_SECRET` to a long random secret. It signs clinic approve/reject review links.
+- When a clinic registers, the owner receives an email with a secure `/clinic-review/{clinic_id}?token=...` link.
+- The review page shows clinic details and lets the owner approve or reject without exposing the private clinic access code.
+
 For local development with PostgreSQL, create a `.env` from `.env.example` or set `DATABASE_URL` in your shell before running:
 
 ```powershell
@@ -159,6 +167,7 @@ The app supports the first multi-tenant SaaS workflow:
 - Clinic access codes scope dashboard data to one clinic: doctors, schedules, bookings, queue sessions, and notifications.
 - Clinic staff can add doctors only to their own clinic; the server ignores any forged `clinic_id`.
 - Clinic registration confirmation includes a WhatsApp handoff to the platform owner number `07767088664`.
+- Clinic registration also creates an owner email notification when `PLATFORM_OWNER_EMAIL` and `RESEND_API_KEY` are configured.
 - The clinic access code is not delivered automatically to applicants. The platform owner approves the clinic, then sends the code manually from `/admin/clinics` through the prepared WhatsApp message.
 - Each clinic has SaaS settings for trial plan status and WhatsApp booking delivery from the clinic dashboard.
 - Clinic staff can send booking details to the patient's WhatsApp from the daily bookings table. Fully automatic background sending is prepared for WhatsApp Business API integration.

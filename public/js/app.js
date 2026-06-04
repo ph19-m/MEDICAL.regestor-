@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=11";
+import { api } from "./api.js?v=12";
 import {
   bookingCard,
   bookingTable,
@@ -15,7 +15,7 @@ import {
   queueStatusCard,
   statusBadge,
   whatsAppShareButton
-} from "./components.js?v=11";
+} from "./components.js?v=12";
 
 const app = document.querySelector("#app");
 
@@ -779,6 +779,13 @@ function clinicRegisterPage() {
         ...formPayload,
         name: clinic.name || formPayload.clinic_name
       };
+      const ownerEmailLabel =
+        {
+          sent: "تم إرسال إيميل للمالك",
+          pending: "بانتظار إعداد خدمة الإيميل",
+          skipped: "لم يتم تحديد إيميل المالك",
+          failed: "تعذر إرسال إيميل المالك"
+        }[clinic.owner_email_status] || "-";
       toast("تم استلام طلب العيادة وهو الآن بانتظار موافقة مالك المنصة.", "success");
       form.reset();
       render(
@@ -795,6 +802,7 @@ function clinicRegisterPage() {
                 <div><dt>حالة الطلب</dt><dd>بانتظار الموافقة</dd></div>
                 <div><dt>المحافظة</dt><dd>${escapeHtml(clinic.governorate)}</dd></div>
                 <div><dt>المنطقة</dt><dd>${escapeHtml(clinic.area)}</dd></div>
+                <div><dt>إشعار المالك</dt><dd>${escapeHtml(ownerEmailLabel)}</dd></div>
                 <div><dt>الرابط بعد التفعيل</dt><dd dir="ltr">/clinics/${escapeHtml(clinic.slug)}</dd></div>
               </dl>
               <div class="button-row confirmation-actions">
@@ -813,6 +821,119 @@ function clinicRegisterPage() {
       setFormSubmitting(form, false);
     }
   });
+}
+
+function clinicReviewStatusLabel(status) {
+  return (
+    {
+      pending: "بانتظار الموافقة",
+      approved: "تمت الموافقة",
+      rejected: "مرفوضة",
+      active: "مفعلة",
+      inactive: "غير مفعلة",
+      suspended: "موقوفة",
+      trial: "تجربة"
+    }[status] || status || "-"
+  );
+}
+
+async function clinicReviewPage(id) {
+  const params = queryParams();
+  const token = params.token || "";
+  const suggestedAction = params.action || "";
+  if (!token) {
+    render(
+      `<section class="section narrow">${emptyState("رابط المراجعة غير مكتمل", "افتح الرابط الكامل الموجود في إيميل طلب تسجيل العيادة.")}</section>`,
+      "مراجعة طلب العيادة"
+    );
+    return;
+  }
+
+  render(
+    `<section class="section narrow">${loadingSkeleton(4)}</section>`,
+    "مراجعة طلب العيادة"
+  );
+
+  try {
+    const clinic = await api.clinicReview(id, token);
+    const isPending = clinic.status === "pending";
+    const reviewStatus = clinic.registration_status || clinic.status;
+    render(
+      `
+        <section class="section page-title">
+          <span class="eyebrow">مراجعة طلب عيادة</span>
+          <h1>${escapeHtml(clinic.name)}</h1>
+          <p>هذا الرابط خاص بمالك المنصة. راجع البيانات، ثم وافق أو ارفض الطلب.</p>
+        </section>
+        <section class="section confirmation">
+          <article class="confirmation-card">
+            <div class="confirmation-card__hero">
+              <span class="eyebrow">حالة الطلب</span>
+              <h1>${escapeHtml(clinicReviewStatusLabel(reviewStatus))}</h1>
+              <p>${isPending ? "الطلب بانتظار قرارك." : "تم اتخاذ قرار على هذا الطلب مسبقاً."}</p>
+              ${suggestedAction ? `<p class="muted">الإجراء المقترح من الرابط: ${suggestedAction === "approve" ? "موافقة" : "رفض"}</p>` : ""}
+            </div>
+            <dl class="confirmation-details">
+              <div><dt>اسم العيادة</dt><dd>${escapeHtml(clinic.name)}</dd></div>
+              <div><dt>النوع</dt><dd>${escapeHtml(clinic.clinic_type || "عيادة خاصة")}</dd></div>
+              <div><dt>المحافظة</dt><dd>${escapeHtml(clinic.governorate)}</dd></div>
+              <div><dt>المنطقة</dt><dd>${escapeHtml(clinic.area)}</dd></div>
+              <div><dt>الهاتف</dt><dd dir="ltr">${escapeHtml(clinic.phone)}</dd></div>
+              <div><dt>المسؤول</dt><dd>${escapeHtml(clinic.owner_name || "-")}</dd></div>
+              <div><dt>واتساب المسؤول</dt><dd dir="ltr">${escapeHtml(clinic.owner_phone || clinic.phone || "-")}</dd></div>
+              <div><dt>إيميل المدير</dt><dd dir="ltr">${escapeHtml(clinic.admin_email || "-")}</dd></div>
+              <div><dt>الخطة</dt><dd>${escapeHtml(clinic.plan || "free")}</dd></div>
+              <div><dt>تاريخ الطلب</dt><dd>${escapeHtml(clinic.created_at ? clinic.created_at.slice(0, 10) : "-")}</dd></div>
+              <div class="wide"><dt>العنوان</dt><dd>${escapeHtml(clinic.address || "-")}</dd></div>
+              ${clinic.internal_notes ? `<div class="wide"><dt>ملاحظات</dt><dd>${escapeHtml(clinic.internal_notes)}</dd></div>` : ""}
+            </dl>
+            <div class="button-row confirmation-actions">
+              <button class="btn primary large" data-review-action="approve" ${!isPending ? "disabled" : ""}>الموافقة على العيادة</button>
+              <button class="btn danger large" data-review-action="reject" ${!isPending ? "disabled" : ""}>رفض الطلب</button>
+              <a class="btn secondary large" href="/admin/clinics" data-link>فتح لوحة المالك</a>
+            </div>
+          </article>
+        </section>
+      `,
+      "مراجعة طلب العيادة"
+    );
+
+    document.querySelectorAll("[data-review-action]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const action = button.dataset.reviewAction;
+        await withButtonLoading(button, async () => {
+          const updated = await api.submitClinicReview(id, { token, action });
+          toast(action === "approve" ? "تمت الموافقة على العيادة." : "تم رفض طلب العيادة.", "success");
+          render(
+            `
+              <section class="section confirmation">
+                <article class="confirmation-card">
+                  <div class="confirmation-card__hero">
+                    <span class="success-ring">✓</span>
+                    <span class="eyebrow">تم تحديث الطلب</span>
+                    <h1>${escapeHtml(updated.name)}</h1>
+                    <p>الحالة الحالية: ${escapeHtml(clinicReviewStatusLabel(updated.registration_status || updated.status))}</p>
+                  </div>
+                  <div class="button-row confirmation-actions">
+                    <a class="btn primary large" href="/admin/clinics" data-link>فتح لوحة المالك</a>
+                    <a class="btn secondary large" href="/" data-link>العودة للرئيسية</a>
+                  </div>
+                </article>
+              </section>
+            `,
+            "تم تحديث الطلب"
+          );
+        }, action === "approve" ? "جاري الموافقة..." : "جاري الرفض...").catch((error) => {
+          toast(error.message, "error");
+        });
+      });
+    });
+  } catch (error) {
+    render(
+      `<section class="section narrow">${emptyState("تعذر فتح طلب العيادة", error.message)}</section>`,
+      "مراجعة طلب العيادة"
+    );
+  }
 }
 
 function loginPage() {
@@ -1736,6 +1857,7 @@ async function route() {
     if (path === "/track") return trackPage();
     if (parts[0] === "track" && parts[1]) return trackPage(parts[1]);
     if (path === "/clinic-register") return clinicRegisterPage();
+    if (parts[0] === "clinic-review" && parts[1]) return clinicReviewPage(parts[1]);
     if (path === "/login") return loginPage();
     if (path === "/register") return registerPage();
     if (path === "/dashboard" || path === "/dashboard/today" || path === "/dashboard/bookings" || path === "/dashboard/queue") {

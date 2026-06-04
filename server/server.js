@@ -1,6 +1,7 @@
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const crypto = require("crypto");
 const { URL } = require("url");
 const { readDb, writeDb } = require("./database");
 const { WEEK_DAYS_AR } = require("./seed");
@@ -99,6 +100,31 @@ function appBaseUrl(request) {
   const host = request?.headers?.host || `localhost:${PORT}`;
   const protocol = host.includes("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
   return `${protocol}://${host}`;
+}
+
+function emailActionSecret() {
+  return process.env.EMAIL_ACTION_SECRET || process.env.SUPER_ADMIN_ACCESS_CODE || DEMO_SUPER_ADMIN_ACCESS_CODE;
+}
+
+function clinicReviewToken(clinicId) {
+  return crypto
+    .createHmac("sha256", emailActionSecret())
+    .update(`clinic-review:${clinicId}`)
+    .digest("hex");
+}
+
+function verifyClinicReviewToken(clinicId, token) {
+  const expected = clinicReviewToken(clinicId);
+  const actual = String(token || "");
+  if (actual.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
+}
+
+function clinicReviewUrl(request, clinic, action = "") {
+  const url = new URL(`/clinic-review/${encodeURIComponent(clinic.id)}`, appBaseUrl(request));
+  url.searchParams.set("token", clinicReviewToken(clinic.id));
+  if (action) url.searchParams.set("action", action);
+  return url.toString();
 }
 
 function getPublicBootstrapCache(method, url, auth) {
@@ -258,6 +284,102 @@ async function loginWithSupabase(email, password) {
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || ""));
+}
+
+function platformOwnerEmail() {
+  return String(process.env.PLATFORM_OWNER_EMAIL || process.env.OWNER_EMAIL || "").trim();
+}
+
+function emailFromAddress() {
+  return String(process.env.EMAIL_FROM || "Dawri Medical <onboarding@resend.dev>").trim();
+}
+
+function clinicRegistrationEmailMessage(request, clinic, user) {
+  const reviewLink = clinicReviewUrl(request, clinic);
+  const approveLink = clinicReviewUrl(request, clinic, "approve");
+  const rejectLink = clinicReviewUrl(request, clinic, "reject");
+  const subject = `طلب تسجيل عيادة جديد - ${clinic.name}`;
+  const text = [
+    "وصل طلب تسجيل عيادة جديد في دوري الطبي.",
+    `العيادة: ${clinic.name}`,
+    `المحافظة/المنطقة: ${clinic.governorate} / ${clinic.area}`,
+    `الهاتف: ${clinic.phone}`,
+    `المسؤول: ${clinic.owner_name || "-"}`,
+    `واتساب المسؤول: ${clinic.owner_phone || clinic.phone || "-"}`,
+    `إيميل المدير: ${user?.email || clinic.admin_email || "-"}`,
+    `العنوان: ${clinic.address || "-"}`,
+    `رابط المراجعة: ${reviewLink}`,
+    `موافقة: ${approveLink}`,
+    `رفض: ${rejectLink}`
+  ].join("\n");
+  const html = `
+    <div dir="rtl" style="font-family:Arial,Tahoma,sans-serif;line-height:1.8;color:#10233f">
+      <h2 style="margin:0 0 12px">طلب تسجيل عيادة جديد في دوري الطبي</h2>
+      <p>راجع بيانات العيادة، ثم وافق أو ارفض الطلب من الرابط الآمن أدناه.</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">العيادة</td><td style="padding:8px;border-bottom:1px solid #e5e7eb"><strong>${escapeEmailHtml(clinic.name)}</strong></td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">الموقع</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${escapeEmailHtml(clinic.governorate)} / ${escapeEmailHtml(clinic.area)}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">الهاتف</td><td style="padding:8px;border-bottom:1px solid #e5e7eb" dir="ltr">${escapeEmailHtml(clinic.phone)}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">المسؤول</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${escapeEmailHtml(clinic.owner_name || "-")}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">واتساب المسؤول</td><td style="padding:8px;border-bottom:1px solid #e5e7eb" dir="ltr">${escapeEmailHtml(clinic.owner_phone || clinic.phone || "-")}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">إيميل المدير</td><td style="padding:8px;border-bottom:1px solid #e5e7eb" dir="ltr">${escapeEmailHtml(user?.email || clinic.admin_email || "-")}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">العنوان</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${escapeEmailHtml(clinic.address || "-")}</td></tr>
+      </table>
+      <p>
+        <a href="${approveLink}" style="display:inline-block;background:#059669;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;margin-left:8px">مراجعة والموافقة</a>
+        <a href="${rejectLink}" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px">مراجعة والرفض</a>
+      </p>
+      <p><a href="${reviewLink}">فتح صفحة المراجعة</a></p>
+    </div>
+  `;
+  return { subject, text, html };
+}
+
+function escapeEmailHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function sendEmailWithResend({ to, subject, text, html }) {
+  const apiKey = process.env.RESEND_API_KEY || "";
+  if (!to) return { status: "skipped", reason: "PLATFORM_OWNER_EMAIL غير مضاف." };
+  if (!apiKey) return { status: "pending", reason: "RESEND_API_KEY غير مضاف." };
+  if (typeof fetch !== "function") return { status: "failed", reason: "fetch غير متاح في بيئة التشغيل." };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.EMAIL_SEND_TIMEOUT_MS || 8000));
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        from: emailFromAddress(),
+        to: [to],
+        subject,
+        text,
+        html
+      }),
+      signal: controller.signal
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        status: "failed",
+        reason: payload.message || payload.error || "تعذر إرسال الإيميل."
+      };
+    }
+    return { status: "sent", provider_id: payload.id || "" };
+  } catch (error) {
+    return { status: "failed", reason: error.message };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function createSupabaseAuthUser({ email, password, name, phone, role, clinicId }) {
@@ -736,6 +858,31 @@ function publicClinic(clinic) {
     slug,
     public_path: `/clinics/${encodeURIComponent(slug)}`,
     public_url: `/clinics/${encodeURIComponent(slug)}`
+  };
+}
+
+function clinicReviewDetails(db, clinic) {
+  if (!clinic) return null;
+  const admin = (db.users || []).find((user) => user.clinic_id === clinic.id && user.role === "clinic_admin");
+  return {
+    id: clinic.id,
+    name: clinic.name,
+    slug: clinic.slug,
+    status: clinic.status,
+    registration_status: clinic.registration_status,
+    governorate: clinic.governorate,
+    area: clinic.area,
+    address: clinic.address,
+    phone: clinic.phone,
+    owner_name: clinic.owner_name,
+    owner_phone: clinic.owner_phone,
+    admin_email: admin?.email || clinic.admin_email || "",
+    clinic_type: clinic.clinic_type,
+    plan: clinic.plan || "free",
+    subscription_status: clinic.subscription_status || "trial",
+    trial_ends_at: clinic.trial_ends_at,
+    internal_notes: clinic.internal_notes || "",
+    created_at: clinic.created_at
   };
 }
 
@@ -1271,6 +1418,49 @@ function updateClinicSettings(db, clinicId, payload) {
   return { clinic };
 }
 
+function applyClinicDecision(db, clinic, status) {
+  if (!clinic) return { error: "لم يتم العثور على العيادة." };
+  if (!["active", "inactive"].includes(status)) return { error: "حالة الطلب غير صحيحة." };
+
+  clinic.status = status;
+  clinic.updated_at = new Date().toISOString();
+  if (!SAAS_PLANS.has(clinic.plan)) clinic.plan = "free";
+
+  if (status === "active") {
+    clinic.registration_status = "approved";
+    clinic.approved_at = clinic.approved_at || new Date().toISOString();
+    clinic.subscription_status = clinic.subscription_status === "pending" ? "trial" : clinic.subscription_status;
+    db.users
+      .filter((user) => user.clinic_id === clinic.id)
+      .forEach((user) => {
+        user.status = "active";
+        user.updated_at = new Date().toISOString();
+      });
+  }
+
+  if (status === "inactive") {
+    clinic.registration_status = clinic.registration_status === "pending" ? "rejected" : "inactive";
+    clinic.subscription_status = "suspended";
+    db.users
+      .filter((user) => user.clinic_id === clinic.id)
+      .forEach((user) => {
+        user.status = "suspended";
+        user.updated_at = new Date().toISOString();
+      });
+  }
+
+  const subscription = (db.subscriptions || []).find((item) => item.clinic_id === clinic.id);
+  if (subscription) {
+    subscription.plan = clinic.plan || subscription.plan || "free";
+    subscription.status = clinic.subscription_status || subscription.status || "trial";
+    subscription.trial_ends_at = clinic.trial_ends_at || subscription.trial_ends_at || null;
+    subscription.current_period_end = subscription.current_period_end || clinic.trial_ends_at || null;
+    subscription.updated_at = new Date().toISOString();
+  }
+
+  return { clinic, subscription };
+}
+
 async function createClinicRegistration(db, payload) {
   const name = String(payload.clinic_name || payload.name || "").trim();
   const phone = String(payload.phone || "").trim();
@@ -1370,6 +1560,35 @@ async function createClinicRegistration(db, payload) {
   db.subscriptions = Array.isArray(db.subscriptions) ? db.subscriptions : [];
   db.subscriptions.push(subscription);
   return { clinic, user, subscription, auth_created: Boolean(authUser.user?.id) };
+}
+
+async function notifyOwnerAboutClinicRegistration(request, db, clinic, user) {
+  db.notifications = Array.isArray(db.notifications) ? db.notifications : [];
+  const recipient = platformOwnerEmail();
+  const email = clinicRegistrationEmailMessage(request, clinic, user);
+  const result = await sendEmailWithResend({
+    to: recipient,
+    subject: email.subject,
+    text: email.text,
+    html: email.html
+  });
+  const now = new Date().toISOString();
+  const notification = {
+    id: makeId("notification"),
+    booking_id: "",
+    clinic_id: clinic.id,
+    type: "email",
+    message: email.text,
+    status: result.status,
+    recipient,
+    provider: result.provider_id ? "resend" : "",
+    provider_id: result.provider_id || "",
+    failure_reason: result.reason || "",
+    created_at: now,
+    updated_at: now
+  };
+  db.notifications.push(notification);
+  return notification;
 }
 
 function ensureTenantFields(db) {
@@ -1597,10 +1816,15 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const result = await createClinicRegistration(db, payload);
       if (result.error) return sendError(response, 400, result.error);
-      await persistDb(db, ["clinics", "users", "subscriptions"]);
+      const notification = await notifyOwnerAboutClinicRegistration(request, db, result.clinic, result.user);
+      await persistDb(db, ["clinics", "users", "subscriptions", "notifications"]);
       return sendJson(response, 201, {
         ok: true,
-        data: { ...publicClinic(result.clinic), auth_created: result.auth_created }
+        data: {
+          ...publicClinic(result.clinic),
+          auth_created: result.auth_created,
+          owner_email_status: notification.status
+        }
       });
     }
 
@@ -1663,6 +1887,36 @@ async function handleApi(request, response, url) {
         return sendJson(response, 200, { ok: true, data: bookings });
       }
       return sendError(response, 400, "أدخل رقم الحجز أو رقم الهاتف.");
+    }
+
+    if (method === "GET" && segments[1] === "clinic-review" && segments[2]) {
+      const clinic = findClinic(db, segments[2]);
+      if (!clinic) return sendError(response, 404, "لم يتم العثور على طلب العيادة.");
+      if (!verifyClinicReviewToken(clinic.id, url.searchParams.get("token"))) {
+        return sendError(response, 403, "رابط مراجعة الطلب غير صحيح أو غير مخوّل.");
+      }
+      return sendJson(response, 200, {
+        ok: true,
+        data: clinicReviewDetails(db, clinic)
+      });
+    }
+
+    if (method === "PATCH" && segments[1] === "clinic-review" && segments[2]) {
+      const payload = await parseBody(request);
+      const clinic = findClinic(db, segments[2]);
+      if (!clinic) return sendError(response, 404, "لم يتم العثور على طلب العيادة.");
+      if (!verifyClinicReviewToken(clinic.id, payload.token)) {
+        return sendError(response, 403, "رابط مراجعة الطلب غير صحيح أو غير مخوّل.");
+      }
+      const action = String(payload.action || "");
+      const status = action === "approve" ? "active" : action === "reject" ? "inactive" : "";
+      const result = applyClinicDecision(db, clinic, status);
+      if (result.error) return sendError(response, 400, result.error);
+      await persistDb(db, ["clinics", "users", "subscriptions"]);
+      return sendJson(response, 200, {
+        ok: true,
+        data: clinicReviewDetails(db, result.clinic)
+      });
     }
 
     if (method === "GET" && url.pathname === "/api/dashboard/today") {
@@ -1738,40 +1992,21 @@ async function handleApi(request, response, url) {
       const payload = await parseBody(request);
       const clinic = findClinic(db, segments[2]);
       if (!clinic) return sendError(response, 404, "لم يتم العثور على العيادة.");
-      ["name", "governorate", "area", "address", "phone", "status", "plan", "subscription_status"].forEach((field) => {
+      ["name", "governorate", "area", "address", "phone", "plan", "subscription_status"].forEach((field) => {
         if (payload[field] !== undefined) clinic[field] = payload[field];
       });
-      if (!SAAS_PLANS.has(clinic.plan)) clinic.plan = "free";
-      if (payload.status === "active") {
-        clinic.registration_status = "approved";
-        clinic.approved_at = clinic.approved_at || new Date().toISOString();
-        clinic.subscription_status = clinic.subscription_status === "pending" ? "trial" : clinic.subscription_status;
-        db.users
-          .filter((user) => user.clinic_id === clinic.id)
-          .forEach((user) => {
-            user.status = "active";
-            user.updated_at = new Date().toISOString();
-          });
-      }
-      if (payload.status === "inactive") {
-        clinic.registration_status = clinic.registration_status === "pending" ? "rejected" : "inactive";
-        db.users
-          .filter((user) => user.clinic_id === clinic.id)
-          .forEach((user) => {
-            user.status = "suspended";
-            user.updated_at = new Date().toISOString();
-          });
-      }
-      const subscription = (db.subscriptions || []).find((item) => item.clinic_id === clinic.id);
-      if (subscription) {
-        subscription.plan = clinic.plan || subscription.plan || "free";
-        subscription.status = clinic.subscription_status || subscription.status || "trial";
-        subscription.trial_ends_at = clinic.trial_ends_at || subscription.trial_ends_at || null;
-        subscription.current_period_end = subscription.current_period_end || clinic.trial_ends_at || null;
-        subscription.updated_at = new Date().toISOString();
+      const result = payload.status ? applyClinicDecision(db, clinic, payload.status) : { clinic };
+      if (result.error) return sendError(response, 400, result.error);
+      if (!payload.status) {
+        const subscription = (db.subscriptions || []).find((item) => item.clinic_id === clinic.id);
+        if (subscription) {
+          subscription.plan = clinic.plan || subscription.plan || "free";
+          subscription.status = clinic.subscription_status || subscription.status || "trial";
+          subscription.updated_at = new Date().toISOString();
+        }
       }
       await persistDb(db, ["clinics", "users", "subscriptions"]);
-      return sendJson(response, 200, { ok: true, data: clinic });
+      return sendJson(response, 200, { ok: true, data: result.clinic });
     }
 
     if (method === "GET" && url.pathname === "/api/admin/stats") {

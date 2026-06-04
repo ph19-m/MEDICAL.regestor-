@@ -66,6 +66,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload)
     }),
+  clinicReview: (id, token) =>
+    request(`/api/clinic-review/${encodeURIComponent(id)}?token=${encodeURIComponent(token || "")}`),
+  submitClinicReview: (id, payload) =>
+    request(`/api/clinic-review/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
   createBooking: (payload) =>
     request("/api/bookings", {
       method: "POST",
